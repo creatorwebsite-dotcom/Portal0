@@ -1,9 +1,45 @@
 {
-  "updatedAt": "20 Oct 2026, 09:48 PM IST",
+  "updatedAt": "20 Oct 2026, 10:06 PM IST",
   "hookLine1": "Aaj ki Top 5 Khabrein jo aapke Exam ko Crack karengi - Sirf 3 minute mein!",
   "hookLine2": "Utho! Aaj ke is dynamic analysis mein RBI ka naya update aur Supreme Court ka landmark faisla shamil hai.",
   "totalArticles": 30,
   "articles": [
+    {
+      "category": "national",
+      "categoryLabel": "🏛️ National & Polity",
+      "title": "On ECINet platform, access for States can be switched off and on centrally: report",
+      "link": "https://www.thehindu.com/news/national/on-ecinet-platform-access-for-states-can-be-switched-off-and-on-centrally-report/article71605004.ece",
+      "pubDate": "Tue, 20 Oct 2026 21:56:02 +0530",
+      "examRelevance": "GS Paper-II: Polity, Governance, Supreme Court Judgements, Bills & Govt Schemes",
+      "keyPoints": "• The report assumes significance in view of objections raised by Election Commissioners Sukhbir Singh Sandhu and Vivek Joshi over the centralisation of ECINet and the electoral roll database"
+    },
+    {
+      "category": "national",
+      "categoryLabel": "🏛️ National & Polity",
+      "title": "Kanthapuram Sunni faction calls off protests against Waqf board reconstitution in Keralam",
+      "link": "https://www.thehindu.com/news/national/kerala/kanthapuram-sunni-faction-calls-off-protests-against-waqf-board-reconstitution-in-keralam/article71604998.ece",
+      "pubDate": "Tue, 20 Oct 2026 21:54:05 +0530",
+      "examRelevance": "GS Paper-II: Polity, Governance, Supreme Court Judgements, Bills & Govt Schemes",
+      "keyPoints": "• The faction will have a nominee in the board, says Minister Samsudheen"
+    },
+    {
+      "category": "national",
+      "categoryLabel": "🏛️ National & Polity",
+      "title": "Arrest made in Sakthikulangara skeletal remains case",
+      "link": "https://www.thehindu.com/news/national/kerala/arrest-made-in-sakthikulangara-skeletal-remains-case/article71604648.ece",
+      "pubDate": "Tue, 20 Oct 2026 21:44:03 +0530",
+      "examRelevance": "GS Paper-II: Polity, Governance, Supreme Court Judgements, Bills & Govt Schemes",
+      "keyPoints": "• The gruesome incident came to light on September 30 when workers cleaning the harbor's septic tank found decomposed remains concealed beneath a mat"
+    },
+    {
+      "category": "national",
+      "categoryLabel": "🏛️ National & Polity",
+      "title": "CJP leaders Saurav Das, Ashutosh Ranka move Delhi HC against judicial custody",
+      "link": "https://www.thehindu.com/news/national/saurav-das-ashutosh-ranka-judicial-custody-cjp-seeks-urgent-hearing-in-delhi-high-court/article71604565.ece",
+      "pubDate": "Tue, 20 Oct 2026 21:38:47 +0530",
+      "examRelevance": "GS Paper-II: Polity, Governance, Supreme Court Judgements, Bills & Govt Schemes",
+      "keyPoints": "• The CJP leaders have questioned the justification for their continued detention on grounds of public order; their plea states that any restriction on liberty must be backed by a real and proximate connection with a disturbance of public order, rather than a remote possibility of such a disturbance"
+    },
     {
       "category": "national",
       "categoryLabel": "🏛️ National & Polity",
@@ -21,42 +57,6 @@
       "pubDate": "Tue, 20 Oct 2026 21:15:44 +0530",
       "examRelevance": "GS Paper-II: Polity, Governance, Supreme Court Judgements, Bills & Govt Schemes",
       "keyPoints": "• Jaishankar hosts U.S.<br>• Secretary of State, UAE FM in Mumbai, holds trilateral talks on trade, energy, and connectivity"
-    },
-    {
-      "category": "national",
-      "categoryLabel": "🏛️ National & Polity",
-      "title": "Cardiologists from across the globe discuss angioplasty complications at meet in Chennai",
-      "link": "https://www.thehindu.com/news/cities/chennai/cardiologists-from-across-the-globe-discuss-angioplasty-complications-at-meet-in-chennai/article71603283.ece",
-      "pubDate": "Tue, 20 Oct 2026 21:13:47 +0530",
-      "examRelevance": "GS Paper-II: Polity, Governance, Supreme Court Judgements, Bills & Govt Schemes",
-      "keyPoints": "• <strong>Key Update:</strong> Cardiologists from across the globe discuss angioplasty complications at meet in Chennai"
-    },
-    {
-      "category": "national",
-      "categoryLabel": "🏛️ National & Polity",
-      "title": "Kanthapuram Sunni faction calls off protests against Waqf board reconstitution in Keralam",
-      "link": "https://www.thehindu.com/news/national/kerala/kanthapuram-sunni-faction-calls-off-protests-against-waqf-board-reconstitution-in-keralam/article71604998.ece",
-      "pubDate": "Tue, 20 Oct 2026 21:12:31 +0530",
-      "examRelevance": "GS Paper-II: Polity, Governance, Supreme Court Judgements, Bills & Govt Schemes",
-      "keyPoints": "• The faction will have a nominee in the board, says Minister Samsudheen"
-    },
-    {
-      "category": "national",
-      "categoryLabel": "🏛️ National & Polity",
-      "title": "Collector reviews flood mitigation works in Cuddalore",
-      "link": "https://www.thehindu.com/news/national/tamil-nadu/collector-reviews-flood-mitigation-works-in-cuddalore/article71603598.ece",
-      "pubDate": "Tue, 20 Oct 2026 20:57:24 +0530",
-      "examRelevance": "GS Paper-II: Polity, Governance, Supreme Court Judgements, Bills & Govt Schemes",
-      "keyPoints": "• <strong>Key Update:</strong> Collector reviews flood mitigation works in Cuddalore"
-    },
-    {
-      "category": "national",
-      "categoryLabel": "🏛️ National & Polity",
-      "title": "State Highways Dept. to complete widening of BHEL Feeder Road in Ranipet by December",
-      "link": "https://www.thehindu.com/news/national/tamil-nadu/state-highways-dept-to-complete-widening-of-bhel-feeder-road-in-ranipet-by-december/article71604699.ece",
-      "pubDate": "Tue, 20 Oct 2026 20:49:49 +0530",
-      "examRelevance": "GS Paper-II: Polity, Governance, Supreme Court Judgements, Bills & Govt Schemes",
-      "keyPoints": "• The project is expected to bring relief to motorists, especially truck drivers, bound for industrial units in the district"
     },
     {
       "category": "economy",
@@ -115,6 +115,24 @@
     {
       "category": "ir",
       "categoryLabel": "🌐 International Relations",
+      "title": "Attack by Islamic State-affiliated group in Mali kills 48",
+      "link": "https://www.thehindu.com/news/international/attack-by-islamic-state-affiliated-group-in-mali-kills-48/article71605269.ece",
+      "pubDate": "Tue, 20 Oct 2026 21:51:15 +0530",
+      "examRelevance": "GS Paper-II & Current Affairs: Bilateral Agreements, Foreign Visits & UN/G20/BRICS",
+      "keyPoints": "• <strong>Key Update:</strong> Attack by Islamic State-affiliated group in Mali kills 48"
+    },
+    {
+      "category": "ir",
+      "categoryLabel": "🌐 International Relations",
+      "title": "French PM vows ‘massive’ police deployment for new demonstrations on October 24",
+      "link": "https://www.thehindu.com/news/international/french-pm-vows-massive-police-deployment-for-new-demonstrations-on-october-24/article71604984.ece",
+      "pubDate": "Tue, 20 Oct 2026 21:47:20 +0530",
+      "examRelevance": "GS Paper-II & Current Affairs: Bilateral Agreements, Foreign Visits & UN/G20/BRICS",
+      "keyPoints": "• \"The deployment for next Saturday will be massive,\" Mr.<br>• Lecornu said in Parliament, acknowledging that the security operation for the protests last weekend had been \"too static and not mobile enough.\""
+    },
+    {
+      "category": "ir",
+      "categoryLabel": "🌐 International Relations",
       "title": "Iran Guards say their mines halted two tankers crossing Strait of Hormuz",
       "link": "https://www.thehindu.com/news/international/iran-guards-say-their-mines-halted-two-tankers-crossing-strait-of-hormuz/article71605265.ece",
       "pubDate": "Tue, 20 Oct 2026 21:43:09 +0530",
@@ -149,22 +167,13 @@
       "keyPoints": "• The two sides discussed energy security, defence cooperation and strengthening bilateral ties, Mr."
     },
     {
-      "category": "ir",
-      "categoryLabel": "🌐 International Relations",
-      "title": "Defence Minister Rajnath Singh meets Iranian Vice-President, Tajikistan Prime Minister",
-      "link": "https://www.thehindu.com/news/national/defence-minister-rajnath-singh-meets-iranian-vice-president-tajikistan-prime-minister/article71604395.ece",
-      "pubDate": "Tue, 20 Oct 2026 18:02:04 +0530",
-      "examRelevance": "GS Paper-II & Current Affairs: Bilateral Agreements, Foreign Visits & UN/G20/BRICS",
-      "keyPoints": "• \"Pleasure to meet H.E.<br>• Mr Mohammad Reza Aref, First Vice President of Iran on the sidelines of the SCO Heads of Government meeting in Dushanbe,\" Defence Minister Rajnath Singh said"
-    },
-    {
-      "category": "ir",
-      "categoryLabel": "🌐 International Relations",
-      "title": "Zelenskyy says spoke to Rubio over Starlink, Starshield issues",
-      "link": "https://www.thehindu.com/news/international/zelenskyy-says-spoke-to-rubio-over-starlink-starshield-issues/article71604158.ece",
-      "pubDate": "Tue, 20 Oct 2026 16:22:07 +0530",
-      "examRelevance": "GS Paper-II & Current Affairs: Bilateral Agreements, Foreign Visits & UN/G20/BRICS",
-      "keyPoints": "• Starshield, developed by tech titan Elon Musk’s SpaceX, is controlled and managed by the U.S.<br>• government; Ukraine also uses the civilian Starlink system but not for military purposes."
+      "category": "scitech",
+      "categoryLabel": "🚀 Science, Tech & Environment",
+      "title": "All you need to know about: Leptospirosis",
+      "link": "https://www.thehindu.com/sci-tech/health/all-you-need-to-know-about-leptospirosis/article71600948.ece",
+      "pubDate": "Tue, 20 Oct 2026 21:56:53 +0530",
+      "examRelevance": "GS Paper-III & Prelims: ISRO/NASA Missions, Defense Updates, Tech & Climate Reports",
+      "keyPoints": "• Leptospirosis can initially resemble common monsoon illnesses, but without timely diagnosis and treatment, it can progress to life-threatening complications affecting the kidneys, liver and lungs"
     },
     {
       "category": "scitech",
@@ -210,15 +219,6 @@
       "pubDate": "Tue, 20 Oct 2026 17:51:38 +0530",
       "examRelevance": "GS Paper-III & Prelims: ISRO/NASA Missions, Defense Updates, Tech & Climate Reports",
       "keyPoints": "• A consultation with two dozen climate researchers and an analysis of temperatures worldwide for for every hour since 1960 has yielded a new concept"
-    },
-    {
-      "category": "scitech",
-      "categoryLabel": "🚀 Science, Tech & Environment",
-      "title": "Early U.S. flu season, current strain may signal risk for younger people; doctors urge shots",
-      "link": "https://www.thehindu.com/sci-tech/health/early-us-flu-season-current-strain-may-signal-risk-for-younger-people-doctors-urge-shots/article71604363.ece",
-      "pubDate": "Tue, 20 Oct 2026 17:27:50 +0530",
-      "examRelevance": "GS Paper-III & Prelims: ISRO/NASA Missions, Defense Updates, Tech & Climate Reports",
-      "keyPoints": "• Scientists say new mutation may leave younger people less protected.<br>• adults got a flu shot last season vs 75 million in 2019-20.<br>• West Coast positive flu test rate reaches 10.7%, versus 0.5% this time a year earlier"
     },
     {
       "category": "editorial",
