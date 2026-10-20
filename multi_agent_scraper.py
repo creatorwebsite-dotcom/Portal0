@@ -5,1039 +5,1013 @@ import time
 import hashlib
 import asyncio
 import urllib.parse
-from datetime import datetime, timedelta
+import urllib.request
+from datetime import datetime
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
+
 from curl_cffi import requests as cffi_requests
+from playwright.async_api import async_playwright
+from playwright_stealth import stealth
 
 DATABASE_FILE = "jobs_database.json"
-ADMIN_BOXES_FILE = "admin_boxes.json"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 # ==============================================================================
-# LAYER 1A: 8 MAJOR AGGREGATORS & MIRROR WEBSITES
+# LAYER 1A: 8 MAJOR AGGREGATOR WEBSITES + MIRROR WEBSITES
 # ==============================================================================
 SOURCES = [
-    {"name": "SarkariResultMain", "url": "https://www.sarkariresult.com/"},
-    {"name": "SarkariResultMirror", "url": "https://sarkariresult.com.cm/"},
-    {"name": "FreeJobAlertMain", "url": "https://www.freejobalert.com/government-jobs/"},
+    {"name": "SarkariResult", "url": "https://sarkariresult.com.cm/"},
+    {"name": "SarkariResultMirror", "url": "https://www.sarkariresult.com/"},
+    {"name": "FreeJobAlert", "url": "https://www.freejobalert.com/government-jobs/"},
     {"name": "RojgarResult", "url": "https://www.rojgarresult.com/"},
     {"name": "SarkariExam", "url": "https://www.sarkariexam.com/"},
     {"name": "IndGovtJobs", "url": "https://www.indgovtjobs.in/"},
     {"name": "FreshersNow", "url": "https://www.freshersnow.com/government-jobs-india/"},
-    {"name": "CareerPower", "url": "https://www.careerpower.in/upcoming-government-exams.html"}
+    {"name": "CareerPower", "url": "https://www.careerpower.in/upcoming-government-exams.html"},
+    {"name": "JagranJosh", "url": "https://www.jagranjosh.com/articles-sarkari-naukri-1288164377-1"}
 ]
 
 # ==============================================================================
-# LAYER 1B: OFFICIAL RECRUITMENT PORTALS & NOTICE BOARDS (FOR DEEP VERIFICATION)
+# LAYER 1B: OFFICIAL RECRUITMENT BOARDS (200+ Govt & 100 Non-Govt/PSU Coverage)
 # ==============================================================================
 OFFICIAL_HUBS = {
-    "upsc": {"name": "UPSC", "home": "https://upsc.gov.in", "notices": "https://upsc.gov.in/examinations/active-examinations", "apply_portal": "https://upsconline.nic.in"},
-    "ssc": {"name": "SSC", "home": "https://ssc.gov.in", "notices": "https://ssc.gov.in/Portal/Notices", "apply_portal": "https://ssc.gov.in"},
-    "ibps": {"name": "IBPS", "home": "https://www.ibps.in", "notices": "https://www.ibps.in/notifications/", "apply_portal": "https://ibpsonline.ibps.in"},
-    "sbi": {"name": "SBI", "home": "https://sbi.co.in/web/careers", "notices": "https://sbi.co.in/web/careers/current-openings", "apply_portal": "https://bank.sbi/web/careers/current-openings"},
-    "rbi": {"name": "RBI", "home": "https://www.rbi.org.in", "notices": "https://opportunities.rbi.org.in/Scripts/Vacancies.aspx", "apply_portal": "https://opportunities.rbi.org.in/Scripts/Vacancies.aspx"},
-    "nabard": {"name": "NABARD", "home": "https://www.nabard.org", "notices": "https://www.nabard.org/careers-notices1.aspx?cid=693&id=26", "apply_portal": "https://www.nabard.org/careers-notices1.aspx?cid=693&id=26"},
-    "lic": {"name": "LIC", "home": "https://licindia.in", "notices": "https://licindia.in/Bottom-Links/Careers", "apply_portal": "https://licindia.in/Bottom-Links/Careers"},
-    "niacl": {"name": "NIACL", "home": "https://www.newindia.co.in", "notices": "https://www.newindia.co.in/portal/readMore/Vacancies", "apply_portal": "https://www.newindia.co.in/portal/readMore/Vacancies"},
-    "uiic": {"name": "UIIC", "home": "https://uiic.co.in", "notices": "https://uiic.co.in/en/careers/recruitment", "apply_portal": "https://uiic.co.in/en/careers/recruitment"},
-    "idbi": {"name": "IDBI Bank", "home": "https://www.idbibank.in", "notices": "https://www.idbibank.in/idbi-bank-careers-current-openings.aspx", "apply_portal": "https://www.idbibank.in/idbi-bank-careers-current-openings.aspx"},
-    "rrb": {"name": "Railway RRB", "home": "https://www.rrbcdg.gov.in", "notices": "https://www.rrbcdg.gov.in", "apply_portal": "https://www.rrbapply.gov.in"},
-    "rpf": {"name": "RPF Railway", "home": "https://rpf.indianrailways.gov.in", "notices": "https://www.rrbapply.gov.in", "apply_portal": "https://www.rrbapply.gov.in"},
-    "army": {"name": "Indian Army", "home": "https://joinindianarmy.nic.in", "notices": "https://joinindianarmy.nic.in/Authentication.aspx", "apply_portal": "https://joinindianarmy.nic.in"},
-    "navy": {"name": "Indian Navy", "home": "https://www.joinindiannavy.gov.in", "notices": "https://www.joinindiannavy.gov.in/en/page/current-events.html", "apply_portal": "https://www.joinindiannavy.gov.in"},
-    "airforce": {"name": "Indian Air Force", "home": "https://agnipathvayu.cdac.in", "notices": "https://agnipathvayu.cdac.in/AV/", "apply_portal": "https://agnipathvayu.cdac.in/AV/"},
-    "coastguard": {"name": "Indian Coast Guard", "home": "https://joinindiancoastguard.cdac.in", "notices": "https://joinindiancoastguard.cdac.in", "apply_portal": "https://joinindiancoastguard.cdac.in"},
-    "delhipolice": {"name": "Delhi Police", "home": "https://delhipolice.gov.in", "notices": "https://delhipolice.gov.in/recruitments", "apply_portal": "https://ssc.gov.in"},
-    "mpsc": {"name": "Maharashtra MPSC", "home": "https://mpsc.gov.in", "notices": "https://mpsc.gov.in/adv_notification/8", "apply_portal": "https://mpsconline.gov.in"},
-    "mahapolice": {"name": "Maharashtra Police", "home": "https://polrecruitment2024.mahait.org", "notices": "https://polrecruitment2024.mahait.org", "apply_portal": "https://polrecruitment2024.mahait.org"},
-    "mahaforest": {"name": "Maharashtra Forest", "home": "https://www.mahaforest.gov.in", "notices": "https://www.mahaforest.gov.in", "apply_portal": "https://www.mahaforest.gov.in"},
-    "mahabhumi": {"name": "Maharashtra Revenue Talathi", "home": "https://mahabhumi.gov.in", "notices": "https://mahabhumi.gov.in/mahabhumilink", "apply_portal": "https://mahabhumi.gov.in"},
-    "mahardd": {"name": "Maharashtra ZP RDD", "home": "https://rdd.maharashtra.gov.in", "notices": "https://rdd.maharashtra.gov.in", "apply_portal": "https://ibpsonline.ibps.in"},
-    "mahaarogya": {"name": "Maharashtra Arogya", "home": "https://arogya.maharashtra.gov.in", "notices": "https://arogya.maharashtra.gov.in", "apply_portal": "https://arogya.maharashtra.gov.in"},
-    "mahakrishi": {"name": "Maharashtra Krishi", "home": "https://krishi.maharashtra.gov.in", "notices": "https://krishi.maharashtra.gov.in", "apply_portal": "https://krishi.maharashtra.gov.in"},
-    "mahadiscom": {"name": "MSEDCL Mahadiscom", "home": "https://www.mahadiscom.in", "notices": "https://www.mahadiscom.in/en/career/", "apply_portal": "https://www.mahadiscom.in/en/career/"},
-    "uppsc": {"name": "UPPSC", "home": "https://uppsc.up.nic.in", "notices": "https://uppsc.up.nic.in/CandidatePages/Notifications.aspx", "apply_portal": "https://uppsc.up.nic.in/CandidatePages/Notifications.aspx"},
-    "uppbpb": {"name": "UP Police UPPBPB", "home": "https://uppbpb.gov.in", "notices": "https://uppbpb.gov.in/Home/Notice", "apply_portal": "https://uppbpb.gov.in"},
-    "upsssc": {"name": "UPSSSC", "home": "https://upsssc.gov.in", "notices": "https://upsssc.gov.in/AllNotifications.aspx", "apply_portal": "https://upsssc.gov.in/AllNotifications.aspx"},
-    "bpsc": {"name": "Bihar BPSC", "home": "https://bpsc.bih.nic.in", "notices": "https://bpsc.bih.nic.in", "apply_portal": "https://onlinebpsc.bihar.gov.in"},
-    "csbc": {"name": "Bihar Police CSBC", "home": "https://csbc.bih.nic.in", "notices": "https://csbc.bih.nic.in", "apply_portal": "https://csbc.bih.nic.in"},
-    "bssc": {"name": "Bihar BSSC", "home": "https://bssc.bihar.gov.in", "notices": "https://bssc.bihar.gov.in/NoticeBoard.htm", "apply_portal": "https://bssc.bihar.gov.in/NoticeBoard.htm"},
-    "mppsc": {"name": "MPPSC", "home": "https://mppsc.mp.gov.in", "notices": "https://mppsc.mp.gov.in/Advertisements", "apply_portal": "https://mppsc.mp.gov.in/Applyonline"},
-    "mpesb": {"name": "MP ESB", "home": "https://esb.mp.gov.in", "notices": "https://esb.mp.gov.in/e_default.html", "apply_portal": "https://esb.mp.gov.in"},
-    "rpsc": {"name": "Rajasthan RPSC", "home": "https://rpsc.rajasthan.gov.in", "notices": "https://rpsc.rajasthan.gov.in/advertisements", "apply_portal": "https://sso.rajasthan.gov.in"},
-    "rsmssb": {"name": "Rajasthan RSMSSB", "home": "https://rsmssb.rajasthan.gov.in", "notices": "https://rsmssb.rajasthan.gov.in/page?menuName=ApBuI6wdvnNKC6MoOgFsfXwFRsE7cKLr", "apply_portal": "https://sso.rajasthan.gov.in"},
-    "ctet": {"name": "CTET CBSE", "home": "https://ctet.nic.in", "notices": "https://ctet.nic.in", "apply_portal": "https://ctet.nic.in"},
-    "kvs": {"name": "KVS Sangathan", "home": "https://kvsangathan.nic.in", "notices": "https://kvsangathan.nic.in/en/recruitment", "apply_portal": "https://kvsangathan.nic.in/en/recruitment"},
-    "nvs": {"name": "NVS Navodaya", "home": "https://navodaya.gov.in", "notices": "https://navodaya.gov.in/nvs/en/Recruitment/Notification-Vacancies/", "apply_portal": "https://navodaya.gov.in/nvs/en/Recruitment/Fill-up-online-application/"},
-    "dsssb": {"name": "Delhi DSSSB", "home": "https://dsssb.delhi.gov.in", "notices": "https://dsssb.delhi.gov.in/home/vacancies", "apply_portal": "https://dsssbonline.nic.in"},
-    "ugcnet": {"name": "NTA UGC NET", "home": "https://ugcnet.nta.ac.in", "notices": "https://ugcnet.nta.ac.in", "apply_portal": "https://ugcnet.nta.ac.in"},
-    "iocl": {"name": "IOCL", "home": "https://iocl.com", "notices": "https://iocl.com/latest-job-opening", "apply_portal": "https://iocl.com/latest-job-opening"},
-    "ntpc": {"name": "NTPC", "home": "https://ntpc.co.in", "notices": "https://careers.ntpc.co.in", "apply_portal": "https://careers.ntpc.co.in"},
-    "ongc": {"name": "ONGC", "home": "https://ongcindia.com", "notices": "https://ongcindia.com/web/eng/career-tab", "apply_portal": "https://ongcindia.com/web/eng/career-tab"},
-    "bhel": {"name": "BHEL", "home": "https://www.bhel.com", "notices": "https://careers.bhel.in", "apply_portal": "https://careers.bhel.in"},
-    "gail": {"name": "GAIL", "home": "https://gailonline.com", "notices": "https://gailonline.com/CRApplyingGail.html", "apply_portal": "https://gailonline.com/CRApplyingGail.html"},
-    "powergrid": {"name": "POWERGRID", "home": "https://www.powergrid.in", "notices": "https://www.powergrid.in/en/job-opportunities", "apply_portal": "https://www.powergrid.in/en/job-opportunities"},
-    "hpcl": {"name": "HPCL", "home": "https://www.hindustanpetroleum.com", "notices": "https://www.hindustanpetroleum.com/job-openings", "apply_portal": "https://jobs.hpcl.co.in"},
-    "cil": {"name": "Coal India", "home": "https://www.coalindia.in", "notices": "https://www.coalindia.in/career-cil/", "apply_portal": "https://www.coalindia.in/career-cil/"},
-    "sail": {"name": "SAIL", "home": "https://www.sail.co.in", "notices": "https://sailcareers.com", "apply_portal": "https://sailcareers.com"},
-    "drdo": {"name": "DRDO RAC", "home": "https://rac.gov.in", "notices": "https://rac.gov.in", "apply_portal": "https://rac.gov.in"},
-    "isro": {"name": "ISRO", "home": "https://www.isro.gov.in", "notices": "https://www.isro.gov.in/Careers.html", "apply_portal": "https://www.isro.gov.in/Careers.html"},
-    "barc": {"name": "BARC", "home": "https://barc.gov.in", "notices": "https://recruit.barc.gov.in", "apply_portal": "https://recruit.barc.gov.in"},
-    "npcil": {"name": "NPCIL", "home": "https://npcil.nic.in", "notices": "https://www.npcilcareers.co.in", "apply_portal": "https://www.npcilcareers.co.in"},
-    "nmdc": {"name": "NMDC", "home": "https://www.nmdc.co.in", "notices": "https://www.nmdc.co.in/careers", "apply_portal": "https://www.nmdc.co.in/careers"},
-    "indiapost": {"name": "India Post GDS", "home": "https://indiapostgdsonline.gov.in", "notices": "https://indiapostgdsonline.gov.in", "apply_portal": "https://indiapostgdsonline.gov.in"},
-    "bsnl": {"name": "BSNL", "home": "https://www.bsnl.co.in", "notices": "https://externalexam.bsnl.co.in", "apply_portal": "https://externalexam.bsnl.co.in"},
-    "dmrc": {"name": "Delhi Metro DMRC", "home": "https://www.delhimetrorail.com", "notices": "https://www.delhimetrorail.com/pages/en/career", "apply_portal": "https://www.delhimetrorail.com/pages/en/career"},
-    "mahametro": {"name": "MahaMetro", "home": "https://www.mahametro.org", "notices": "https://www.mahametro.org/Career.aspx", "apply_portal": "https://www.mahametro.org/Career.aspx"},
-    "sci": {"name": "Supreme Court SCI", "home": "https://main.sci.gov.in", "notices": "https://main.sci.gov.in/recruitment", "apply_portal": "https://main.sci.gov.in/recruitment"},
-    "fci": {"name": "FCI", "home": "https://fci.gov.in", "notices": "https://www.recruitmentfci.in", "apply_portal": "https://www.recruitmentfci.in"},
-    "fssai": {"name": "FSSAI", "home": "https://fssai.gov.in", "notices": "https://fssai.gov.in/jobs@fssai.php", "apply_portal": "https://fssai.gov.in/jobs@fssai.php"},
-    "bis": {"name": "BIS", "home": "https://www.bis.gov.in", "notices": "https://www.bis.gov.in/career-opportunities/", "apply_portal": "https://www.bis.gov.in/career-opportunities/"},
-    "esic": {"name": "ESIC", "home": "https://www.esic.gov.in", "notices": "https://www.esic.gov.in/recruitments", "apply_portal": "https://www.esic.gov.in/recruitments"},
-    "epfo": {"name": "EPFO", "home": "https://www.epfindia.gov.in", "notices": "https://www.epfindia.gov.in/site_en/Recruitments.php", "apply_portal": "https://www.epfindia.gov.in/site_en/Recruitments.php"},
-    "sebi": {"name": "SEBI", "home": "https://www.sebi.gov.in", "notices": "https://www.sebi.gov.in/sebiweb/other/careerdetail.jsp", "apply_portal": "https://www.sebi.gov.in/sebiweb/other/careerdetail.jsp"},
-    "mha": {"name": "MHA IB", "home": "https://www.mha.gov.in", "notices": "https://www.mha.gov.in/en/notifications/vacancies", "apply_portal": "https://www.mha.gov.in/en/notifications/vacancies"},
-    "hal": {"name": "HAL", "home": "https://hal-india.co.in", "notices": "https://hal-india.co.in/career", "apply_portal": "https://hal-india.co.in/career"},
-    "bel": {"name": "BEL", "home": "https://bel-india.in", "notices": "https://bel-india.in/job-notifications/", "apply_portal": "https://bel-india.in/job-notifications/"},
-    "mdl": {"name": "Mazagon Dock MDL", "home": "https://mazagondock.in", "notices": "https://mazagondock.in/ Career.aspx", "apply_portal": "https://mazagondock.in"},
-    "aai": {"name": "AAI Airports Authority", "home": "https://www.aai.aero", "notices": "https://www.aai.aero/en/careers/recruitment", "apply_portal": "https://www.aai.aero/en/careers/recruitment"},
-    "cantonment": {"name": "Cantonment Board", "home": "https://ecantonmentboard.gov.in", "notices": "https://ecantonmentboard.gov.in", "apply_portal": "https://ecantonmentboard.gov.in"},
-    "csc": {"name": "CSC e-Seva", "home": "https://csc.gov.in", "notices": "https://csc.gov.in/careers", "apply_portal": "https://register.csc.gov.in"}
+    "upsc": {"name": "Union Public Service Commission", "home": "https://upsc.gov.in/", "notices": "https://upsc.gov.in/examinations/active-examinations", "apply_portal": "https://upsconline.nic.in/upsc/OTRP/index.php"},
+    "ssc": {"name": "Staff Selection Commission", "home": "https://ssc.gov.in/", "notices": "https://ssc.gov.in/Portal/Notices", "apply_portal": "https://ssc.gov.in/login"},
+    "rrb": {"name": "Railway Recruitment Board", "home": "https://www.rrbapply.gov.in/", "notices": "https://www.rrbapply.gov.in/#/notices", "apply_portal": "https://www.rrbapply.gov.in/#/auth/home"},
+    "rpf": {"name": "Railway Protection Force", "home": "https://www.rrbapply.gov.in/", "notices": "https://www.rrbapply.gov.in/#/notices", "apply_portal": "https://www.rrbapply.gov.in/#/auth/home"},
+    "ibps": {"name": "Institute of Banking Personnel Selection", "home": "https://www.ibps.in/", "notices": "https://www.ibps.in/notifications/", "apply_portal": "https://ibpsonline.ibps.in/"},
+    "sbi": {"name": "State Bank of India", "home": "https://sbi.co.in/web/careers", "notices": "https://sbi.co.in/web/careers/current-openings", "apply_portal": "https://ibpsonline.ibps.in/"},
+    "rbi": {"name": "Reserve Bank of India", "home": "https://opportunities.rbi.org.in/", "notices": "https://opportunities.rbi.org.in/Scripts/Vacancies.aspx", "apply_portal": "https://opportunities.rbi.org.in/Scripts/Vacancies.aspx"},
+    "nabard": {"name": "NABARD", "home": "https://www.nabard.org/", "notices": "https://www.nabard.org/careers-notices1.aspx?cid=693&id=26", "apply_portal": "https://www.nabard.org/careers-notices1.aspx?cid=693&id=26"},
+    "lic": {"name": "Life Insurance Corporation", "home": "https://licindia.in/", "notices": "https://licindia.in/Bottom-Links/Careers", "apply_portal": "https://ibpsonline.ibps.in/"},
+    "niacl": {"name": "New India Assurance", "home": "https://www.newindia.co.in/", "notices": "https://www.newindia.co.in/portal/readMore/Vacancies", "apply_portal": "https://ibpsonline.ibps.in/"},
+    "idbi": {"name": "IDBI Bank", "home": "https://www.idbibank.in/", "notices": "https://www.idbibank.in/idbi-bank-careers-current-openings.aspx", "apply_portal": "https://www.idbibank.in/idbi-bank-careers-current-openings.aspx"},
+    "army": {"name": "Join Indian Army Agniveer", "home": "https://joinindianarmy.nic.in/", "notices": "https://joinindianarmy.nic.in/Bravo.htm", "apply_portal": "https://joinindianarmy.nic.in/Authentication.aspx"},
+    "navy": {"name": "Join Indian Navy Agniveer", "home": "https://www.joinindiannavy.gov.in/", "notices": "https://www.joinindiannavy.gov.in/en/page/career-opportunities.html", "apply_portal": "https://agniveernavy.cdac.in/"},
+    "air force": {"name": "Indian Air Force Agniveervayu", "home": "https://agnipathvayu.cdac.in/", "notices": "https://agnipathvayu.cdac.in/AV/", "apply_portal": "https://agnipathvayu.cdac.in/avreg/candidate/login"},
+    "coast guard": {"name": "Indian Coast Guard", "home": "https://joinindiancoastguard.cdac.in/", "notices": "https://joinindiancoastguard.cdac.in/", "apply_portal": "https://joinindiancoastguard.cdac.in/cgept/"},
+    "mpsc": {"name": "Maharashtra MPSC", "home": "https://mpsc.gov.in/", "notices": "https://mpsc.gov.in/adv_notification/8", "apply_portal": "https://mpsconline.gov.in/candidate/login"},
+    "mahapolice": {"name": "Maharashtra Police Bharti", "home": "https://www.mahapolice.gov.in/", "notices": "https://policerecruitment2024.mahait.org/", "apply_portal": "https://policerecruitment2024.mahait.org/"},
+    "uppsc": {"name": "Uttar Pradesh UPPSC", "home": "https://uppsc.up.nic.in/", "notices": "https://uppsc.up.nic.in/CandidatePages/Notifications.aspx", "apply_portal": "https://uppsc.up.nic.in/CandidatePages/Notifications.aspx"},
+    "upsssc": {"name": "Uttar Pradesh UPSSSC", "home": "https://upsssc.gov.in/", "notices": "https://upsssc.gov.in/AllNotifications.aspx", "apply_portal": "https://upsssc.gov.in/AllNotifications.aspx"},
+    "up police": {"name": "UPPBPB UP Police", "home": "https://uppbpb.gov.in/", "notices": "https://uppbpb.gov.in/Notice", "apply_portal": "https://uppbpb.gov.in/"},
+    "bpsc": {"name": "Bihar BPSC", "home": "https://www.bpsc.bih.nic.in/", "notices": "https://www.bpsc.bih.nic.in/", "apply_portal": "https://onlinebpsc.bihar.gov.in/main/home"},
+    "bssc": {"name": "Bihar BSSC", "home": "https://bssc.bihar.gov.in/", "notices": "https://bssc.bihar.gov.in/NoticeBoard.htm", "apply_portal": "https://www.onlinebssc.com/"},
+    "csbc": {"name": "Bihar Police CSBC", "home": "https://csbc.bihar.gov.in/", "notices": "https://csbc.bihar.gov.in/", "apply_portal": "https://csbc.bihar.gov.in/"},
+    "mppsc": {"name": "Madhya Pradesh MPPSC", "home": "https://mppsc.mp.gov.in/", "notices": "https://mppsc.mp.gov.in/advertisements", "apply_portal": "https://mppsc.mp.gov.in/Applyonline"},
+    "rpsc": {"name": "Rajasthan RPSC", "home": "https://rpsc.rajasthan.gov.in/", "notices": "https://rpsc.rajasthan.gov.in/advertisements", "apply_portal": "https://sso.rajasthan.gov.in/signin"},
+    "rsmssb": {"name": "Rajasthan RSSB", "home": "https://rssb.rajasthan.gov.in/", "notices": "https://rssb.rajasthan.gov.in/advertisements", "apply_portal": "https://sso.rajasthan.gov.in/signin"},
+    "hpsc": {"name": "Haryana HPSC", "home": "https://hpsc.gov.in/", "notices": "https://hpsc.gov.in/en-us/Instructions", "apply_portal": "https://regn.hpsc.gov.in/"},
+    "dsssb": {"name": "Delhi DSSSB", "home": "https://dsssb.delhi.gov.in/", "notices": "https://dsssb.delhi.gov.in/home/Vacancy-Advertisements", "apply_portal": "https://dsssbonline.nic.in/"},
+    "ctet": {"name": "CBSE CTET", "home": "https://ctet.nic.in/", "notices": "https://ctet.nic.in/", "apply_portal": "https://examinationservices.nic.in/"},
+    "kvs": {"name": "Kendriya Vidyalaya Sangathan", "home": "https://kvsangathan.nic.in/", "notices": "https://kvsangathan.nic.in/en/employment-notice/", "apply_portal": "https://kvsangathan.nic.in/en/employment-notice/"},
+    "nvs": {"name": "Navodaya Vidyalaya Samiti", "home": "https://navodaya.gov.in/", "notices": "https://navodaya.gov.in/nvs/en/Recruitment/Notification-Vacancies/", "apply_portal": "https://navodaya.gov.in/nvs/en/Recruitment/Fill-up-online-application/"},
+    "ugc net": {"name": "NTA UGC NET", "home": "https://ugcnet.nta.ac.in/", "notices": "https://ugcnet.nta.ac.in/", "apply_portal": "https://ugcnet.ntaonline.in/"},
+    "india post": {"name": "India Post GDS", "home": "https://indiapostgdsonline.gov.in/", "notices": "https://indiapostgdsonline.gov.in/", "apply_portal": "https://indiapostgdsonline.gov.in/reg_instruction.aspx"},
+    "fci": {"name": "Food Corporation of India", "home": "https://fci.gov.in/", "notices": "https://www.recruitmentfci.in/", "apply_portal": "https://www.recruitmentfci.in/"},
+    "esic": {"name": "ESIC", "home": "https://www.esic.gov.in/", "notices": "https://www.esic.gov.in/recruitments", "apply_portal": "https://www.esic.gov.in/recruitments"},
+    "epfo": {"name": "EPFO", "home": "https://www.epfindia.gov.in/", "notices": "https://www.epfindia.gov.in/site_en/Recruitments.php", "apply_portal": "https://upsconline.nic.in/"},
+    "drdo": {"name": "DRDO", "home": "https://www.drdo.gov.in/", "notices": "https://www.drdo.gov.in/drdo/careers", "apply_portal": "https://rac.gov.in/"},
+    "isro": {"name": "ISRO", "home": "https://www.isro.gov.in/", "notices": "https://www.isro.gov.in/Careers.html", "apply_portal": "https://apps.ursc.gov.in/"},
+    "barc": {"name": "BARC", "home": "https://www.barc.gov.in/", "notices": "https://www.barc.gov.in/careers/", "apply_portal": "https://barconlineexam.com/"},
+    "iocl": {"name": "Indian Oil IOCL", "home": "https://iocl.com/", "notices": "https://iocl.com/latest-job-opening", "apply_portal": "https://iocl.com/latest-job-opening"},
+    "ntpc": {"name": "NTPC Limited", "home": "https://careers.ntpc.co.in/", "notices": "https://careers.ntpc.co.in/", "apply_portal": "https://careers.ntpc.co.in/"},
+    "ongc": {"name": "ONGC Limited", "home": "https://ongcindia.com/", "notices": "https://ongcindia.com/web/eng/career-tab", "apply_portal": "https://ongcindia.com/web/eng/career-tab"},
+    "bhel": {"name": "BHEL", "home": "https://careers.bhel.in/", "notices": "https://careers.bhel.in/", "apply_portal": "https://careers.bhel.in/"},
+    "gail": {"name": "GAIL India", "home": "https://gailonline.com/", "notices": "https://gailonline.com/CRApplyingGail.html", "apply_portal": "https://gailonline.com/CRApplyingGail.html"},
+    "sail": {"name": "SAIL", "home": "https://sailcareers.com/", "notices": "https://sailcareers.com/", "apply_portal": "https://sailcareers.com/"},
+    "hal": {"name": "Hindustan Aeronautics HAL", "home": "https://hal-india.co.in/", "notices": "https://hal-india.co.in/career", "apply_portal": "https://hal-india.co.in/career"},
+    "bel": {"name": "Bharat Electronics BEL", "home": "https://bel-india.in/", "notices": "https://bel-india.in/job-notifications/", "apply_portal": "https://bel-india.in/job-notifications/"},
+    "mdl": {"name": "Mazagon Dock MDL", "home": "https://mazagondock.in/", "notices": "https://mazagondock.in/Career.aspx", "apply_portal": "https://mazagondock.in/erecruitment/"},
+    "dmrc": {"name": "Delhi Metro DMRC", "home": "https://delhimetrorail.com/", "notices": "https://delhimetrorail.com/pages/en/career", "apply_portal": "https://delhimetrorail.com/pages/en/career"},
+    "mahametro": {"name": "MahaMetro", "home": "https://www.mahametro.org/", "notices": "https://www.mahametro.org/Career.aspx", "apply_portal": "https://www.mahametro.org/Career.aspx"},
+    "aai": {"name": "Airports Authority AAI", "home": "https://www.aai.aero/", "notices": "https://www.aai.aero/en/careers/recruitment", "apply_portal": "https://www.aai.aero/en/careers/recruitment"}
 }
 
 # ==============================================================================
-# LAYER 1C: COMPLETE 300-POST MASTER DIRECTORY (200 GOVT + 100 SEMI-GOVT/LOCAL/PRIVATE)
+# LAYER 2: NON-GOVT / SEMI-GOVT KEYWORDS & STATE DETECTION MAPPING
 # ==============================================================================
-MASTER_DIRECTORY_CATALOG = [
-    # SECTION 1: 200 Central & State Govt Recurring Exam Posts
-    ("UPSC Civil Services Examination (IAS / IPS / IFS / IRS)", "upsc", ["ias", "ifs", "civil services", "cse"]),
-    ("UPSC Engineering Services Examination (IES / IRMS)", "upsc", ["engineering services", "ese", "ies", "irms"]),
-    ("UPSC Central Armed Police Forces (CAPF) Assistant Commandant", "upsc", ["capf", "assistant commandant"]),
-    ("UPSC National Defence Academy & Naval Academy (NDA & NA)", "upsc", ["nda", "naval academy"]),
-    ("UPSC Combined Defence Services Examination (CDS)", "upsc", ["cds", "combined defence"]),
-    ("UPSC Combined Medical Services (CMS) & Indian Forest Service (IFoS)", "upsc", ["cms", "medical services", "forest service"]),
-    ("SSC CGL Combined Graduate Level (AAO, ASO, Income Tax & GST Inspector, CBI SI, Auditor)", "ssc", ["ssc cgl", "combined graduate level"]),
-    ("SSC CHSL Combined Higher Secondary Level (LDC, JSA, Postal Assistant, DEO)", "ssc", ["ssc chsl", "higher secondary", "ldc", "deo"]),
-    ("SSC MTS Multi-Tasking Staff & CBIC/CBN Havaldar Recruitment", "ssc", ["ssc mts", "havaldar", "multi tasking"]),
-    ("SSC Stenographer Grade C & Grade D Examination", "ssc", ["ssc stenographer", "steno grade"]),
-    ("SSC GD Constable (BSF, CRPF, CISF, ITBP, SSB, SSF & Assam Rifles)", "ssc", ["ssc gd", "constable gd", "rifleman"]),
-    ("SSC Junior Engineer (JE - Civil, Electrical & Mechanical)", "ssc", ["ssc je", "junior engineer"]),
-    ("SSC Selection Posts (Phase Matrix - Matric, Inter & Graduate Level)", "ssc", ["selection post", "ssc phase"]),
-    ("SSC Sub-Inspector in Delhi Police & CAPF (SSC CPO SI)", "ssc", ["ssc cpo", "sub inspector in delhi police", "capf si"]),
-    ("SSC Junior Hindi Translator (JHT) Examination", "ssc", ["ssc jht", "hindi translator"]),
-    ("IBPS PO / MT Probationary Officer in Public Sector Banks", "ibps", ["ibps po", "probationary officer", "crp po"]),
-    ("IBPS Clerk Customer Service Associate (CSA Clerical Cadre)", "ibps", ["ibps clerk", "customer service associate", "crp clerk"]),
-    ("IBPS RRB Officer Scale-I, II, III & Office Assistant (Multipurpose)", "ibps", ["ibps rrb", "crp rrb", "office assistant", "officer scale"]),
-    ("IBPS Specialist Officer (SO - IT, AFO, Rajbhasha, Law, HR, Marketing)", "ibps", ["ibps so", "specialist officer", "crp spl"]),
-    ("SBI Probationary Officer (SBI PO) Recruitment", "sbi", ["sbi po", "probationary officer"]),
-    ("SBI Junior Associate (Customer Support & Sales Clerk)", "sbi", ["sbi clerk", "junior associate"]),
-    ("SBI Specialist Cadre Officer (SCO) Recruitment", "sbi", ["sbi sco", "specialist cadre"]),
-    ("RBI Grade B Officer (General, DEPR, DSIM) & RBI Assistant", "rbi", ["rbi grade b", "rbi assistant"]),
-    ("NABARD Grade A Assistant Manager & Development Assistant", "nabard", ["nabard grade a", "development assistant", "nabard"]),
-    ("LIC Administrative Officer (AAO) & LIC Assistant Recruitment", "lic", ["lic aao", "lic assistant", "lic ado"]),
-    ("NIACL Administrative Officer (AO) & NIACL Assistant", "niacl", ["niacl ao", "niacl assistant", "new india assurance"]),
-    ("UIIC Administrative Officer (AO) & Assistant Recruitment", "uiic", ["uiic", "united india insurance"]),
-    ("IDBI Bank Executive & Assistant Manager Grade A", "idbi", ["idbi executive", "idbi assistant manager", "idbi"]),
-    ("RRB NTPC Graduate & Undergraduate Posts (Station Master, Goods Train Manager, Clerk)", "rrb", ["rrb ntpc", "station master", "ntpc"]),
-    ("RRB Group D Level-1 (Track Maintainer, Pointsman, Workshop Assistant)", "rrb", ["rrb group d", "level 1", "track maintainer"]),
-    ("RRB ALP Assistant Loco Pilot & RRB Technician Grade I / III", "rrb", ["rrb alp", "loco pilot", "rrb technician"]),
-    ("RRB Junior Engineer (JE), DMS, CMA & Paramedical Staff", "rrb", ["rrb je", "rrb paramedical"]),
-    ("RPF Constable & RPF Sub-Inspector (SI) Railway Protection Force", "rpf", ["rpf constable", "rpf si", "railway protection force"]),
-    ("Indian Army Agniveer (GD, Technical, Clerk/SKT, Tradesman)", "army", ["army agniveer", "indian army rally"]),
-    ("Indian Navy Agniveer (SSR & MR) Recruitment", "navy", ["navy agniveer", "agniveer ssr", "agniveer mr"]),
-    ("Indian Air Force Agniveervayu (Science & Non-Science Intake)", "airforce", ["agniveervayu", "air force intake"]),
-    ("Indian Coast Guard Navik (GD / DB) & Yantrik Recruitment", "coastguard", ["coast guard navik", "yantrik"]),
-    ("Delhi Police Constable (Executive), Head Constable & Driver", "delhipolice", ["delhi police constable", "delhi police head constable"]),
-    ("Maharashtra MPSC Rajyasewa State Services & Combined Group B/C (PSI, STI, ASO)", "mpsc", ["mpsc", "rajyasewa", "group b", "group c"]),
-    ("Maharashtra Police Constable, Driver & SRPF Police Bharti", "mahapolice", ["maharashtra police", "srpf", "police bharti"]),
-    ("Maharashtra Forest Department Vanrakshak (Forest Guard)", "mahaforest", ["vanrakshak", "mahaforest", "forest guard"]),
-    ("Maharashtra Talathi Bharti (Revenue Department)", "mahabhumi", ["talathi", "mahabhumi", "revenue"]),
-    ("Maharashtra Zilla Parishad Gramsevak, Arogya Sevak & Krishi Sevak", "mahardd", ["gramsevak", "arogya sevak", "krishi sevak", "zilla parishad"]),
-    ("Maharashtra MSEDCL Mahadiscom Vidyut Sahayak & Junior Engineer", "mahadiscom", ["msedcl", "mahadiscom", "vidyut sahayak"]),
-    ("Uttar Pradesh UPPSC Combined State Services (UPPCS) & RO / ARO", "uppsc", ["uppsc", "uppcs", "ro aro", "review officer"]),
-    ("Uttar Pradesh UP Police Constable & Sub-Inspector (UPPBPB)", "uppbpb", ["up police", "uppbpb"]),
-    ("Uttar Pradesh UPSSSC PET, Rajasva Lekhpal & Junior Assistant", "upsssc", ["upsssc", "lekhpal", "upsssc pet"]),
-    ("Bihar BPSC Combined Competitive Exam (CCE) & TRE Teacher", "bpsc", ["bpsc", "bihar teacher"]),
-    ("Bihar Police Constable (CSBC) & Bihar BSSC Inter/Graduate Level", "csbc", ["bihar police", "csbc", "bssc"]),
-    ("Madhya Pradesh MPPSC State Service Exam & MP ESB Police Constable", "mppsc", ["mppsc", "mp police", "mpesb"]),
-    ("Rajasthan RPSC RAS / RTS & RSMSSB Patwari / VDO / CET", "rpsc", ["rpsc", "rsmssb", "patwari"]),
-    ("CBSE CTET Central Teacher Eligibility Test (Paper I & II)", "ctet", ["ctet", "central teacher eligibility"]),
-    ("KVS & NVS Teaching & Non-Teaching Recruitment (PRT, TGT, PGT, JSA)", "kvs", ["kvs", "nvs", "navodaya", "kendriya vidyalaya"]),
-    ("Delhi DSSSB PRT, TGT, PGT Teacher & DASS Grade II/IV LDC", "dsssb", ["dsssb"]),
-    ("NTA UGC NET & CSIR UGC NET Junior Research Fellowship", "ugcnet", ["ugc net", "csir net"]),
-    ("IOCL Engineering Assistant, Junior Operator & Apprentice", "iocl", ["iocl", "indian oil"]),
-    ("NTPC Engineering Executive Trainee (EET) & ITI Trainee", "ntpc", ["ntpc"]),
-    ("ONGC Graduate Trainee (GT) & Trade/Technician Apprentice", "ongc", ["ongc"]),
-    ("BHEL, GAIL, POWERGRID, HPCL, Coal India (CIL) & SAIL Executive/MT", "bhel", ["bhel", "gail", "powergrid", "hpcl", "coal india", "sail"]),
-    ("DRDO Scientist B / CEPTAM, ISRO Scientist SC, BARC & NPCIL Trainee", "drdo", ["drdo", "isro", "barc", "npcil"]),
-    ("NMDC Field Attendant, HAL, BEL, MDL & AAI Junior Executive", "aai", ["nmdc", "hal", "bel", "mazagon", "aai", "airports authority"]),
-    ("India Post Gramin Dak Sevak (GDS), Postal Assistant & MTS", "indiapost", ["india post", "gds", "gramin dak sevak"]),
-    ("BSNL JTO / MT, DMRC Delhi Metro & MahaMetro JE / Station Controller", "dmrc", ["bsnl", "dmrc", "delhi metro", "mahametro"]),
-    ("Supreme Court of India Junior Court Assistant (JCA) & High Court Clerk", "sci", ["supreme court", "high court", "jca"]),
-    ("FCI Assistant Grade-III, FSSAI, BIS, ESIC UDC/MTS, EPFO SSA/EO & SEBI Grade A", "epfo", ["fci", "fssai", "bis", "esic", "epfo", "sebi"]),
-    ("MHA Intelligence Bureau (IB ACIO / Security Assistant), CBI, NIA & BRO GREF", "mha", ["intelligence bureau", "ib acio", "security assistant", "bro gref"]),
-
-    # SECTION 2: 100 Low-Level, Local, Municipal, Co-operative, GMC & Private Entry-Level Posts
-    ("Gram Panchayat Data Entry Operator (DEO), Rozgar Sahayak & Panchayat Secretary", "mahardd", ["gram panchayat", "rozgar sahayak", "panchayat secretary", "vdo"]),
-    ("Municipal Corporation Tax Collector, Sanitary Inspector, Ward Clerk,MTS & Fireman", "cantonment", ["municipal corporation", "sanitary inspector", "nagar nigam", "bmc", "pmc"]),
-    ("GMC Government Medical College Hospital Ward Boy, Lab Attendant, DEO & Staff Nurse", "mahaarogya", ["gmc", "medical college", "ward boy", "lab attendant", "hospital attendant"]),
-    ("District Co-operative Central Bank (DCCB) Clerk, PACS Manager & MARKFED Assistant", "nabard", ["dccb", "cooperative bank", "markfed", "pacs"]),
-    ("District Milk Union Dairy Plant Operator & Urban Co-operative Bank Clerk", "nabard", ["dairy", "milk union", "urban cooperative"]),
-    ("Zilla Parishad LDC, Junior Engineer, Pashudhan Sahayak & Anganwadi Supervisor", "mahardd", ["anganwadi", "pashudhan", "zilla parishad"]),
-    ("APMC Mandi Samiti Auction Recorder, Weighment Clerk & Cantonment Board LDC/Safaiwala", "cantonment", ["cantonment board", "apmc", "mandi"]),
-    ("CSC Common Service Center E-Seva Operator, Private Bank Sales DSA & Retail/Logistics Executive", "csc", ["csc", "e-seva", "apprentice", "walk-in"])
-]
-
-STANDARD_BOXES = {"Latest Jobs", "Admit Card", "Result", "Answer Key", "Syllabus", "Notification"}
-
 NON_GOVT_KEYWORDS = [
     "ongc", "iocl", "ntpc", "sail", "bhel", "gail", "powergrid", "hpcl", "coal india",
-    "hal", "bel", "mdl", "nmdc", "bsnl", "dmrc", "mahametro", "private", "apprentice",
-    "semi-govt", "psu", "dccb", "pacs", "markfed", "cooperative", "csc", "idbi", "lic", "niacl", "uiic"
+    "hal", "bel", "mdl", "mazagon dock", "cochin shipyard", "grse", "npcil", "nmdc",
+    "bsnl", "dmrc", "mahametro", "idbi", "lic", "niacl", "uiic", "cooperative", "dccb",
+    "pacs", "markfed", "milk union", "dairy", "temple trust", "devasthan", "private",
+    "securitas", "sis", "dsa", "csc", "e-seva", "nursing home", "diagnostic", "reliance",
+    "d-mart", "amazon", "flipkart", "warehouse", "courier", "dtdc", "blue dart",
+    "broadband", "petrol pump", "hotel", "factory", "textile", "packaging", "tcs",
+    "infosys", "wipro", "accenture", "cognizant", "apprentice", "apprentices",
+    "contractual", "third-party", "semi-govt", "psu"
 ]
 
 STATE_KEYWORDS = {
-    "Maharashtra": ["mpsc", "mumbai", "pune", "nagpur", "maharashtra", "talathi", "gramsevak", "srpf", "mahadiscom", "msedcl", "mahametro", "bmc", "pmc", "arogya sevak", "krishi sevak", "vanrakshak", "mahabhumi"],
-    "Uttar Pradesh": ["uppsc", "uppcs", "lucknow", "uttar pradesh", "lekhpal", "up police", "uppbpb", "upsssc", "allahabad", "uptet", "uppsc ro"],
-    "Bihar": ["bpsc", "bihar", "patna", "csbc", "bssc", "btsc", "btet"],
-    "Madhya Pradesh": ["mppsc", "madhya pradesh", "bhopal", "mpesb", "mppeb", "mp police", "indore"],
-    "Rajasthan": ["rpsc", "rajasthan", "jaipur", "patwari", "rsmssb", "rssb", "reet"],
-    "Delhi": ["dsssb", "delhi police", "dmrc", "delhi metro", "delhi high court"],
-    "Haryana": ["hssc", "hpsc", "haryana", "chandigarh"],
-    "Punjab": ["psssb", "ppsc", "punjab"],
-    "Gujarat": ["gpsc", "ojas", "gujarat", "gsssb"],
-    "Karnataka": ["kpsc", "karnataka", "kea", "bengaluru"],
-    "Tamil Nadu": ["tnpsc", "tamil nadu", "chennai", "trb"],
-    "West Bengal": ["wbpsc", "west bengal", "kolkata", "wbp"],
-    "Jharkhand": ["jssc", "jpsc", "jharkhand", "ranchi"],
-    "Chhattisgarh": ["cgpsc", "cgvyapam", "chhattisgarh", "raipur"],
-    "Uttarakhand": ["ukpsc", "uksssc", "uttarakhand", "dehradun"],
-    "Odisha": ["opsc", "osssc", "ossc", "odisha", "bhubaneswar"]
+    "Maharashtra": ["mpsc", "mahagenco", "mahadisco", "msedcl", "mseb", "mumbai", "pune", "nagpur", "nashik", "thane", "bhiwandi", "maharashtra", "talathi", "gramsevak", "krushi sevak", "vanrakshak", "arogya sevak", "srpf", "mahametro", "msrtc", "rto amvi", "mahapolice", "zp maharashtra"],
+    "Uttar Pradesh": ["uppsc", "upsssc", "uppbpb", "up police", "allahabad", "prayagraj", "lucknow", "varanasi", "kanpur", "noida", "uttar pradesh", "lekhpal", "upnhm", "uptet", "upsrtc", "uppcs", "ro/aro"],
+    "Bihar": ["bpsc", "bpssc", "bihar", "patna", "gaya", "muzaffarpur", "csbc", "bssc", "btet", "bihar police"],
+    "Madhya Pradesh": ["mppsc", "esb mp", "mppeb", "vyapam", "madhya pradesh", "bhopal", "indore", "jabalpur", "gwalior", "mp police"],
+    "Rajasthan": ["rpsc", "rsmssb", "rssb", "rajasthan", "jaipur", "jodhpur", "udaipur", "kota", "patwari", "reet", "ras"],
+    "Haryana": ["hpsc", "hssc", "haryana", "chandigarh", "gurugram", "rohtak", "htet", "hcs"],
+    "Delhi": ["dsssb", "delhi police", "aiims delhi", "dmrc", "ndmc", "mcd", "delhi"],
+    "Gujarat": ["gpsc", "gsssb", "ojas", "gujarat", "ahmedabad", "surat", "vadodara"],
+    "Punjab": ["ppsc", "psssb", "punjab", "amritsar", "ludhiana", "patiala"],
+    "West Bengal": ["wbpsc", "wbprb", "west bengal", "kolkata", "howrah"],
+    "Karnataka": ["kpsc", "kea", "karnataka", "bengaluru", "bangalore", "mysuru"],
+    "Tamil Nadu": ["tnpsc", "trb tn", "tamil nadu", "chennai", "coimbatore"],
+    "Telangana": ["tspsc", "tgpsc", "telangana", "hyderabad"],
+    "Andhra Pradesh": ["appsc", "andhra pradesh", "vijayawada", "visakhapatnam"],
+    "Jharkhand": ["jpsc", "jssc", "jharkhand", "ranchi", "jamshedpur"],
+    "Chhattisgarh": ["cgpsc", "cgvyapam", "chhattisgarh", "raipur", "bilaspur"],
+    "Uttarakhand": ["ukpsc", "uksssc", "uttarakhand", "dehradun", "haridwar"],
+    "Himachal Pradesh": ["hppsc", "hpsssb", "himachal", "shimla"],
+    "Odisha": ["opsc", "ossc", "osssc", "odisha", "bhubaneswar", "cuttack"],
+    "Assam": ["apsc", "slprb assam", "assam", "guwahati"],
+    "Kerala": ["kerala psc", "kerala", "thiruvananthapuram", "kochi"]
 }
 
 BLOCK_DOMAINS = [
-    "play.google.com", "apps.apple.com", "whatsapp.com", "t.me", "telegram.me",
-    "facebook.com", "twitter.com", "x.com", "youtube.com", "instagram.com",
-    "pinterest.com", "linkedin.com", "sarkariresulttools.net", "addtoany.com",
-    "google.com", "bing.com", "duckduckgo.com", "yahoo.com", "dmca.com", "cloudflare.com"
+    'play.google.com', 'apps.apple.com', 'drive.google.com',
+    'whatsapp.com', 't.me', 'telegram.me', 'facebook.com',
+    'twitter.com', 'x.com', 'instagram.com', 'youtube.com', 'pinterest.com',
+    'sarkariresulttools.net', 'tools.sarkariresult.com', 'addtoany.com'
 ]
 
 AGGREGATOR_DOMAINS = [
-    "sarkariresult.com", "sarkariresult.com.cm", "freejobalert.com",
-    "rojgarresult.com", "sarkariexam.com", "indgovtjobs.in",
-    "freshersnow.com", "careerpower.in"
+    'sarkariresult.com', 'sarkariresult.com.cm', 'sarkariresulttools.net',
+    'freejobalert.com', 'rojgarresult.com', 'sarkariexam.com',
+    'indgovtjobs.in', 'freshersnow.com', 'careerpower.in',
+    'jagranjosh.com', 'adda247.com', 'sarkariresult.net'
 ]
 
 JUNK_TITLES = [
-    "sarkari result", "tools", "latest notifications", "view more", "click here",
-    "home", "contact us", "disclaimer", "privacy policy", "about us", "sitemap",
-    "download app", "join telegram", "join whatsapp", "test series", "mock test",
-    "certificate verification", "pan card", "aadhar card", "voter id", "typing test"
+    "sarkari result", "sarkariresult", "tools", "sarkari result tools",
+    "latest notifications", "view more", "click here", "home", "read more",
+    "contact us", "disclaimer", "privacy policy", "android app", "apple app",
+    "join telegram", "whatsapp group", "all results", "admit card 2026"
 ]
 
-MONTH_MAP = {
-    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
-    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
-    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9, "oct": 10, "october": 10,
-    "nov": 11, "november": 11, "dec": 12, "december": 12
-}
+DYNAMIC_BOX_KEYWORDS = [
+    "date extended", "corrigendum", "revised notice", "revised vacancy",
+    "short notice", "cutoff", "cut off", "score card", "merit list",
+    "exam city", "intimation", "mock test", "objection", "dv schedule",
+    "document verification", "skill test", "typing test", "pet/pst",
+    "interview schedule", "medical exam", "waiting list", "reserve list",
+    "zone wise", "category wise vacancy", "post preference", "otr registration"
+]
 
 # ==============================================================================
-# NON-BLOCKING NETWORK ENGINE (40s PER-TASK TIMEOUT PROTECTION)
+# STEALTH NETWORK FETCHING ENGINE (curl_cffi + Playwright Stealth)
 # ==============================================================================
-def blocking_fetch(url, timeout=14):
+def fetch_with_curl_cffi(url):
     try:
-        res = cffi_requests.get(url, impersonate="chrome110", timeout=timeout, allow_redirects=True)
-        if res.status_code == 200 and len(res.text) > 150:
-            return res.text
+        response = cffi_requests.get(url, impersonate="chrome110", timeout=15)
+        if response.status_code == 200 and len(response.text) > 250:
+            return response.text
     except Exception:
         pass
     return ""
 
-async def safe_fetch_non_blocking(url, loop, semaphore, timeout=25.0):
-    if not url or not url.startswith("http"):
-        return ""
-    async with semaphore:
-        try:
-            return await asyncio.wait_for(
-                loop.run_in_executor(None, blocking_fetch, url, int(timeout - 3)),
-                timeout=timeout
+async def fetch_with_playwright_stealth(url):
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
             )
+            await stealth(page)
+            await page.goto(url, timeout=30000, wait_until="domcontentloaded")
+            content = await page.content()
+            await browser.close()
+            if content and len(content) > 250:
+                return content
+    except Exception:
+        pass
+    return ""
+
+def resilient_stealth_fetch(url):
+    if not url or url == "#" or not url.startswith("http"):
+        return ""
+    html = fetch_with_curl_cffi(url)
+    if not html or "Just a moment..." in html or "Cloudflare" in html or "Attention Required!" in html:
+        try:
+            html = asyncio.run(fetch_with_playwright_stealth(url))
         except Exception:
-            return ""
+            pass
+    return html
 
 # ==============================================================================
-# LAYER 2: INTENT, CATEGORY, JOB TYPE, STATE & DYNAMIC ADMIN BOX CLASSIFIER
+# STRICT DEEP URL & PDF VALIDATOR (BLOCKS ROOT HOMEPAGES)
+# ==============================================================================
+def is_aggregator_page_link(href):
+    h = href.lower()
+    if h.endswith(".pdf") or ".pdf?" in h or "img.freejobalert.com" in h or "img2.freejobalert.com" in h:
+        return False
+    return any(ag in h for ag in AGGREGATOR_DOMAINS)
+
+def is_specific_deep_url(url, require_pdf=False):
+    """
+    Strictly rejects '#', root domains like 'https://www.rbi.org.in/',
+    or generic language homepages like 'https://hpsc.gov.in/en-us/'.
+    """
+    if not url or url == "#" or not url.startswith("http"):
+        return False
+    u_low = url.lower().strip()
+    if any(b in u_low for b in BLOCK_DOMAINS):
+        return False
+    if is_aggregator_page_link(u_low):
+        return False
+
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/")
+    query = parsed.query
+
+    if require_pdf:
+        return (
+            u_low.endswith(".pdf") or ".pdf?" in u_low or "/portals/" in u_low
+            or "rdocs" in u_low or "download" in u_low or "writereaddata" in u_low
+        )
+
+    generic_paths = [
+        "", "/", "/en", "/en-us", "/hi", "/home", "/index.html",
+        "/index.php", "/index.jsp", "/default.aspx", "/web/careers"
+    ]
+    if path.lower() in generic_paths and not query:
+        return False
+
+    reg_domains = [
+        "ibpsreg.ibps.in", "ibpsonline.ibps.in", "upsconline.nic.in",
+        "mpsconline.gov.in", "onlinebpsc.bihar.gov.in", "dsssbonline.nic.in",
+        "regn.hpsc.gov.in", "rrbapply.gov.in", "examinationservices.nic.in"
+    ]
+    if any(rd in parsed.netloc.lower() for rd in reg_domains) and (len(path) > 1 or query):
+        return True
+
+    segments = [s for s in path.split("/") if s and s.lower() not in ["en", "en-us", "hi", "web"]]
+    return len(segments) >= 1 and (len(path) > 6 or len(query) > 4)
+
+# ==============================================================================
+# LAYER 2: INTENT, CATEGORY, JOB TYPE & STATE CLASSIFIER AGENT
 # ==============================================================================
 class IntentAndMetaClassifierAgent:
     @staticmethod
-    def analyze(title, box_heading=""):
-        t = f"{title} {box_heading}".lower()
-        box_clean = re.sub(r'\s+', ' ', box_heading).strip()
+    def analyze(title):
+        t = title.lower()
 
-        if any(k in t for k in ["answer key", "response sheet", "question paper", "objection"]):
-            category, intent = "Answer Key", "INTENT_ANSWER_KEY"
-        elif any(k in t for k in ["result", "merit list", "cutoff", "cut off", "score card", "scorecard", "final selection", "marks"]):
-            category, intent = "Result", "INTENT_RESULT"
+        if any(k in t for k in ["answer key", "response sheet", "objection", "question paper"]):
+            category = "Answer Key"
+            primary_intent = "INTENT_ANSWER_KEY"
+        elif any(k in t for k in ["result", "merit list", "cutoff", "cut off", "score card", "selection list", "marks", "final result"]):
+            category = "Result"
+            primary_intent = "INTENT_RESULT"
         elif any(k in t for k in ["admit card", "hall ticket", "call letter", "exam city", "exam date", "interview letter"]):
-            category, intent = "Admit Card", "INTENT_ADMIT_CARD"
+            category = "Admit Card"
+            primary_intent = "INTENT_ADMIT_CARD"
         elif any(k in t for k in ["syllabus", "exam pattern", "curriculum"]):
-            category, intent = "Syllabus", "INTENT_SYLLABUS"
-        elif any(k in t for k in ["short notice", "notification pdf", "official notification"]) and "online form" not in t:
-            category, intent = "Notification", "INTENT_NOTIFICATION"
+            category = "Syllabus"
+            primary_intent = "INTENT_SYLLABUS"
+        elif any(k in t for k in ["admission", "counselling", "entrance", "enrollment"]):
+            category = "Admission"
+            primary_intent = "INTENT_APPLY"
+        elif any(k in t for k in ["apply online", "online form", "registration", "application form"]):
+            category = "Latest Jobs"
+            primary_intent = "INTENT_APPLY"
+        elif any(k in t for k in ["notification", "short notice", "advertisement", "advt"]):
+            category = "Latest Jobs"
+            primary_intent = "INTENT_NOTIFICATION"
         else:
-            category, intent = "Latest Jobs", "INTENT_APPLY"
-
-        # Detect Dynamic / Custom Box on Aggregators
-        admin_box = category
-        is_new_admin_box = False
-        if box_clean and len(box_clean) <= 45:
-            b_low = box_clean.lower()
-            if not any(std in b_low for std in ["latest job", "result", "admit card", "answer key", "syllabus"]):
-                if any(custom_k in b_low for custom_k in ["admission", "upcoming", "apprentice", "scholarship", "walk-in", "offline", "important", "counseling", "verification"]):
-                    admin_box = box_clean.title()
-                    is_new_admin_box = True
+            category = "Latest Jobs"
+            primary_intent = "INTENT_APPLY"
 
         job_type = "Non-Govt + Semi-Govt" if any(k in t for k in NON_GOVT_KEYWORDS) else "Govt"
-        state = "All India / Central"
-        for s_name, kws in STATE_KEYWORDS.items():
-            if any(kw in t for kw in kws):
-                state = s_name
+
+        detected_state = "All India / Central"
+        for state_name, keywords in STATE_KEYWORDS.items():
+            if any(kw in t for kw in keywords):
+                detected_state = state_name
+                break
+
+        board_key = None
+        for key in OFFICIAL_HUBS:
+            if key in t:
+                board_key = key
                 break
 
         return {
             "category": category,
-            "primary_intent": intent,
+            "primary_intent": primary_intent,
             "job_type": job_type,
-            "state": state,
-            "admin_box": admin_box,
-            "is_new_admin_box": is_new_admin_box
+            "state": detected_state,
+            "board_key": board_key
         }
 
 # ==============================================================================
-# LAYER 3 & 4: DEEP TABLE PARSER, REAL DATE EXTRACTOR & INTENT-SPECIFIC LINK VERIFIER
+# LAYER 1C: CROSS-WEBSITE COMBINATION GROUPER AGENT
 # ==============================================================================
-def parse_any_date_string(text):
-    if not text:
-        return None
-    text = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', text, flags=re.IGNORECASE)
+class CrossSiteCombinerAgent:
+    @staticmethod
+    def normalize_exam_signature(title):
+        t = title.lower()
+        stop_words = ["online", "form", "recruitment", "vacancy", "bharti", "apply", "now", "out", "link", "check", "download", "pdf", "official", "notification", "advt"]
+        tokens = [w for w in re.findall(r'[a-z0-9]+', t) if w not in stop_words and len(w) > 1]
+        return "_".join(tokens[:5])
 
-    # Pattern 1: DD Mon YYYY or DD Month YYYY (e.g., 15 Oct 2026, 15 October 2026)
-    m1 = re.search(r'\b(\d{1,2})[\s\/\-\.](Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[\s\/\-\.,]+(202[4-9])\b', text, re.IGNORECASE)
-    if m1:
-        day, mon_str, yr = int(m1.group(1)), m1.group(2).lower()[:3], int(m1.group(3))
-        mon = MONTH_MAP.get(mon_str, 1)
-        try:
-            return datetime(yr, mon, day)
-        except ValueError:
-            pass
-
-    # Pattern 2: Mon DD, YYYY (e.g., October 15, 2026)
-    m2 = re.search(r'\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})[\s,]+(202[4-9])\b', text, re.IGNORECASE)
-    if m2:
-        mon_str, day, yr = m2.group(1).lower()[:3], int(m2.group(2)), int(m2.group(3))
-        mon = MONTH_MAP.get(mon_str, 1)
-        try:
-            return datetime(yr, mon, day)
-        except ValueError:
-            pass
-
-    # Pattern 3: DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
-    m3 = re.search(r'\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](202[4-9])\b', text)
-    if m3:
-        d, m, y = int(m3.group(1)), int(m3.group(2)), int(m3.group(3))
-        if 1 <= m <= 12 and 1 <= d <= 31:
-            try:
-                return datetime(y, m, d)
-            except ValueError:
-                pass
-
-    # Pattern 4: ISO YYYY-MM-DD
-    m4 = re.search(r'\b(202[4-9])-(\d{2})-(\d{2})\b', text)
-    if m4:
-        try:
-            return datetime(int(m4.group(1)), int(m4.group(2)), int(m4.group(3)))
-        except ValueError:
-            pass
-
-    return None
-
-def is_clean_external_url(url, allow_aggregator_pdf=False):
-    if not url or not url.startswith("http") or url.endswith("#"):
-        return False
-    u_low = url.lower()
-    if any(b in u_low for b in BLOCK_DOMAINS):
-        return False
-    if any(ag in u_low for ag in AGGREGATOR_DOMAINS):
-        # Allow direct .pdf files hosted on aggregator doc/upload servers
-        if allow_aggregator_pdf and (".pdf" in u_low or "/upload" in u_low):
-            return True
-        return False
-    return True
-
-def match_hub_for_title(title):
-    t_low = title.lower()
-    for _, hub_key, kws in MASTER_DIRECTORY_CATALOG:
-        if any(k in t_low for k in kws):
-            return OFFICIAL_HUBS.get(hub_key)
-    for hub_key, hub_data in OFFICIAL_HUBS.items():
-        if hub_key in t_low or hub_data["name"].lower() in t_low:
-            return hub_data
-    return None
-
-def deep_parse_article_dossier(article_html, article_url, title, primary_intent):
-    """
-    Extracts:
-    1. Intent-Specific Direct Links (Apply Registration URL, Notification PDF, Answer Key, Result, Admit Card, Syllabus, Official Site)
-    2. Real Important Dates (Notification Date, Apply Start, Last Date, Extended Date, Exam Date, Admit Card, Answer Key, Result Date)
-    3. Age Limit & Relaxation
-    4. Application Fee
-    5. Category-Wise Vacancy Distribution & Total Posts
-    6. Selection Process & Exam Pattern
-    """
-    dossier = {
-        "dates": {
-            "notification_date": "See Official Notice",
-            "apply_start_date": "Active / Notified",
-            "last_date": "Check Official Notice",
-            "extended_date": "N/A",
-            "exam_date": "As per Schedule",
-            "admit_card_date": "Before Exam",
-            "answer_key_date": "After Exam",
-            "result_date": "To be Notified",
-            "real_post_date_obj": None,
-            "real_post_date_str": ""
-        },
-        "fees": [],
-        "age_criteria": [],
-        "total_vacancy": "Multiple Posts",
-        "vacancy_rows": [],
-        "category_distribution": {},
-        "selection_process": [],
-        "exam_pattern": [],
-        "links": {
-            "apply_link": "",
-            "notif_pdf": "",
-            "admit_card_link": "",
-            "answer_key_link": "",
-            "result_link": "",
-            "syllabus_link": "",
-            "official_site": ""
-        }
+# ==============================================================================
+# LAYER 6A: UNIQUE NON-REPEATING INTENT-BASED CHALLENGING QUOTE AGENT
+# ==============================================================================
+class UniqueIntentQuoteAgent:
+    INTENT_OPENERS = {
+        "INTENT_APPLY": [
+            "Form bharna sirf pehla kadam hai, asli jung us din shuru hoti hai jab aap",
+            "Bheed sirf registration karke chhod deti hai, lekin asli विजेता",
+            "Comfort zone mein baith kar selection nahi milta;",
+            "Aaj ka ek faisla aapka agla 40 saal ka career badal sakta hai—",
+            "Sapne unke poore nahi hote jo last date ka wait karte hain, balki unke jo",
+            "Har ek seat par hazaron daavedar hain, par बाजी wahi marega jo"
+        ],
+        "INTENT_NOTIFICATION": [
+            "Official vigyapti aa chuki hai—ab bahane banane ka waqt khatam aur",
+            "Notification ki har ek line pukarti hai ki kya aapमें",
+            "Jab duniya vacancy gin rahi ho, tab aap sirf apni ek pakki seat ke liye",
+            "Bigul baj chuka hai! Yeh notification sirf ek PDF nahi, balki",
+            "Taiyari kali raaton mein hoti hai aur chamak selection list mein dikhti hai—",
+            "Jo notification aane ke pehle ghante se apna discipline set karta hai, wahi"
+        ],
+        "INTENT_ADMIT_CARD": [
+            "Admit Card haath mein hai—ab darne ka nahi, balki exam hall mein",
+            "Pichhle mahino ki saari mehnat ab un 2 ghanto ke CBT mein hisab mangegi;",
+            "Hall Ticket sirf entry pass hai, exam center se bahar nikalte waqt",
+            "Pressure wahi mehsoos karta hai jisneimandari se padha hai—ab",
+            "Exam City aur Roll Number tay hai; ab apne dimaag ko shant rakh kar",
+            "Aakhiri dino mein ghabrahat nahi, balki apni speed aur accuracy ka"
+        ],
+        "INTENT_ANSWER_KEY": [
+            "Answer Key se daro mat! Ek-ek galat sawal ka hisab lagao kyunki",
+            "Response sheet aapka aaina hai—apni kamiyon ko pehchan kar",
+            "Sahi uttar aत्मविश्वास dete hain aur galat uttar agle stage ka",
+            "Cutoff ke dar se rukna nahi hai; Answer Key ka har ek question aapko",
+            "Asli aspirant wahi hai jo Answer Key milane ke baad apni galtiyon ko",
+            "Score chahe jo bhi bane, is Response Sheet ke analysis se apni"
+        ],
+        "INTENT_RESULT": [
+            "Result ki PDF mein naam unhi ka chamakta hai jinhone",
+            "Safalta mili toh shukrana karein, aur agar kuch marks se chook gaye toh",
+            "Merit list aakhiri faisla nahi hoti—har ek parinaam aapko",
+            "Selection list mein apna Roll Number dekhne ka sukh har thakan mita deta hai;",
+            "Cutoff par karne walon ko badhai, aur rukne walon ko chunauti hai ki",
+            "Final Result batata hai ki kiski mehnat mein kitni zidd thi—"
+        ],
+        "INTENT_SYLLABUS": [
+            "Syllabus aapka yuddh-manchitra (battle map) hai—bina exam pattern samjhe",
+            "Har ek topic aur weightage ko tod kar padho, kyunki",
+            "Toppers alag kitabein nahi padhte, wo Syllabus ke har ek point ko",
+            "Chakravyuh tabhi tootta hai jab aapko Exam Pattern ke har",
+            "Syllabus ki gehrai ko jo pehle din samajh leta hai, wahi",
+            "Negative marking aur time limit ke is khel mein Syllabus ka"
+        ]
     }
 
-    if not article_html:
-        return dossier
+    INTENT_CHALLENGES = {
+        "INTENT_APPLY": [
+            "rozana 8 ghante ki kadi tapasyase apni seat cheen kar dikhaye!",
+            "aaj hi form bhar kar 100% syllabus aur mock tests mein jhonk de!",
+            "apni neend aur aalsya ko tyag kar har roz apna record tode!",
+            "bina ek din gawaye PYQs aur revision ki aag mein tapna shuru kare!"
+        ],
+        "INTENT_NOTIFICATION": [
+            "is bharti mein apना 100% jhonk kar itihaas rachne ka dam hai!",
+            "aaj se hi har ek subject ka chakravyuh bhedna shuru kar de!",
+            "apne sangharsh ko final selection letter mein badalne ka waqt hai!",
+            "rozana mock test mein apne marks badhane ki zidd pakad le!"
+        ],
+        "INTENT_ADMIT_CARD": [
+            "har ek minute aur har ek question par apna poora niyantran rakho!",
+            "apni kalam aur mouse ki raftaar se paper ko fateh karke aao!",
+            "bina negative marking ke जाल mein fanse apna best score khada karo!",
+            "poore aत्मविश्वास ke sath exam hall mein utro aur jeet kar lauto!"
+        ],
+        "INTENT_ANSWER_KEY": [
+            "wahi galtiyan sudhar kar agle attempt ya Mains mein topper banta hai!",
+            "apni accuracy ko 95% ke paar le jane ka sankalp aaj hi lo!",
+            "har weak topic ko apni sabse badi taqat bana kar dikhao!",
+            "objection aur analysis ke baad agle padav ki taiyari dugni raftaar se karo!"
+        ],
+        "INTENT_RESULT": [
+            "andheri raaton mein bina ruke apne lakshya ke liye pasina bahaya hai!",
+            "dugni taqat aur naye hausle ke sath agle exam mein dhamakedar wapsi karein!",
+            "apni mehnat par bharosa rakhein aur agle lakshya ki taraf kadam badhayein!",
+            "sabit kar dein ki aapki zidd kisi bhi nakami se kahin zyada badi hai!"
+        ],
+        "INTENT_SYLLABUS": [
+            "har ek high-weightage chapter par apni pakad lohe jaisi majboot banao!",
+            "rozana targeted revision se har kathin vishay ko apna gulam bana lo!",
+            "smart strategy aur time-management se cutoff se 20 marks upar ka lakshya rakho!",
+            "ek-ek unit ko master karke apni safalta ki neev aaj hi pakki karo!"
+        ]
+    }
 
-    soup = BeautifulSoup(article_html, "html.parser")
+    @staticmethod
+    def generate_unique_quote(title, meta, used_quotes_set, use_ai=True):
+        intent = meta["primary_intent"]
+        clean_title = re.sub(r'\s+', ' ', title).strip()
+        short_exam_name = " ".join(clean_title.split()[:4])
 
-    # --- STEP A: EXTRACT REAL PUBLISHED / UPDATED DATE FROM META OR JSON-LD ---
-    meta_dates = []
-    for meta in soup.find_all("meta"):
-        prop = (meta.get("property", "") or meta.get("name", "")).lower()
-        if any(k in prop for k in ["published_time", "modified_time", "date", "pubdate", "updated_time"]):
-            dt = parse_any_date_string(meta.get("content", ""))
-            if dt:
-                meta_dates.append(dt)
+        # Try Gemini AI first for a tailored intent-specific challenging quote
+        if use_ai and GEMINI_API_KEY:
+            prompt = (
+                f"Write a single, powerful, challenging 2-line motivational quote in Hinglish specifically for "
+                f"an aspirant viewing '{clean_title}' whose post intent is '{intent}'. "
+                f"Mention '{short_exam_name}' naturally. Make it fierce, unique, and action-oriented. No markdown quotes."
+            )
+            payload = json.dumps({
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.85, "maxOutputTokens": 90}
+            }).encode("utf-8")
 
-    for time_tag in soup.find_all("time"):
-        dt = parse_any_date_string(time_tag.get("datetime", "") or time_tag.get_text(" ", strip=True))
-        if dt:
-            meta_dates.append(dt)
+            for model in ["gemini-2.5-flash", "gemini-2.0-flash"]:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+                try:
+                    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+                    with urllib.request.urlopen(req, timeout=8) as resp:
+                        res = json.loads(resp.read().decode("utf-8"))
+                        candidate_quote = res["candidates"][0]["content"]["parts"][0]["text"].strip().strip('"').strip("'")
+                        if candidate_quote and candidate_quote.lower() not in used_quotes_set:
+                            used_quotes_set.add(candidate_quote.lower())
+                            return candidate_quote
+                except Exception:
+                    continue
 
-    # Also check visible text like "Post Date / Update:" on SarkariResult / FreeJobAlert
-    text_blob = soup.get_text(" ", strip=True)
-    post_date_match = re.search(r'(?:Post Date|Post Update Date|Updated On|Published On|Date of Post)\s*[:\-]?\s*([0-9]{1,2}[\s\/\-\.][A-Za-z0-9]+[\s\/\-\.,]+202[4-9])', text_blob, re.IGNORECASE)
-    if post_date_match:
-        dt = parse_any_date_string(post_date_match.group(1))
-        if dt:
-            meta_dates.insert(0, dt)
+        # Deterministic Non-Repeating Intent Quote Engine (Guaranteed Unique per Post)
+        openers = UniqueIntentQuoteAgent.INTENT_OPENERS.get(intent, UniqueIntentQuoteAgent.INTENT_OPENERS["INTENT_APPLY"])
+        challenges = UniqueIntentQuoteAgent.INTENT_CHALLENGES.get(intent, UniqueIntentQuoteAgent.INTENT_CHALLENGES["INTENT_APPLY"])
 
-    # --- STEP B: PARSE ALL TABLE ROWS & LIST ITEMS FOR DATES, FEES, AGE, VACANCY & LINKS ---
-    for tr in soup.find_all(["tr", "li"]):
-        row_text = re.sub(r'\s+', ' ', tr.get_text(" ", strip=True)).strip()
-        row_low = row_text.lower()
-        if not row_text or len(row_text) > 500:
-            continue
+        seed_int = int(hashlib.md5(f"{clean_title}_{intent}".encode("utf-8")).hexdigest(), 16)
+        for offset in range(len(openers) * len(challenges)):
+            op = openers[(seed_int + offset) % len(openers)]
+            ch = challenges[((seed_int // 7) + offset) % len(challenges)]
+            crafted = f"🔥 [{short_exam_name} Challenge]: {op} {clean_title} ke is mukable mein {ch}"
+            if crafted.lower() not in used_quotes_set:
+                used_quotes_set.add(crafted.lower())
+                return crafted
 
-        # 1. Important Dates Extraction
-        dt_in_row = parse_any_date_string(row_text)
-        if dt_in_row:
-            meta_dates.append(dt_in_row)
-            dt_formatted = dt_in_row.strftime("%d %b %Y")
-            if any(k in row_low for k in ["notification", "advt", "published", "issue"]):
-                dossier["dates"]["notification_date"] = dt_formatted
-            if any(k in row_low for k in ["application begin", "start date", "starting date", "apply start", "registration start"]):
-                dossier["dates"]["apply_start_date"] = dt_formatted
-            if any(k in row_low for k in ["last date", "closing date", "apply online last"]):
-                if "extended" in row_low:
-                    dossier["dates"]["extended_date"] = dt_formatted
-                else:
-                    dossier["dates"]["last_date"] = dt_formatted
-            if "extended" in row_low:
-                dossier["dates"]["extended_date"] = dt_formatted
-            if any(k in row_low for k in ["exam date", "cbt date", "prelims exam", "mains exam", "written exam"]):
-                dossier["dates"]["exam_date"] = dt_formatted
-            if any(k in row_low for k in ["admit card", "hall ticket", "call letter"]):
-                dossier["dates"]["admit_card_date"] = dt_formatted
-            if any(k in row_low for k in ["answer key", "objection"]):
-                dossier["dates"]["answer_key_date"] = dt_formatted
-            if any(k in row_low for k in ["result", "merit list", "score card"]):
-                dossier["dates"]["result_date"] = dt_formatted
+        # Ultimate fallback with unique hash stamp so it NEVER repeats
+        unique_fallback = f"🔥 [{short_exam_name} Sankalp #{seed_int % 9999}]: {clean_title} mein wahi baazi marega jo aaj ke din ko apni aakhiri koshish maan kar mehnat karega!"
+        used_quotes_set.add(unique_fallback.lower())
+        return unique_fallback
 
-        # 2. Application Fee Extraction
-        if any(k in row_low for k in ["general / obc", "gen / obc", "sc / st", "application fee", "₹", "rs.", "rs /-", "nil", "exempted"]):
-            if len(dossier["fees"]) < 6 and len(row_text) < 160 and "click here" not in row_low:
-                dossier["fees"].append(row_text)
+# ==============================================================================
+# LAYER 3 & 4: DEEP REAL TABLE EXTRACTOR + STRICT OFFICIAL & CHROME SNIFFER
+# ==============================================================================
+class DeepVerificationAndExtractionAgent:
+    @staticmethod
+    def search_chrome_fallback(title, intent_type, board_home=""):
+        domain_filter = ""
+        if board_home and board_home != "#":
+            netloc = urlparse(board_home).netloc.replace("www.", "")
+            domain_filter = f"site:{netloc} "
 
-        # 3. Age Criteria Extraction
-        if any(k in row_low for k in ["minimum age", "maximum age", "age limit", "age relaxation", "years", "born between"]):
-            if len(dossier["age_criteria"]) < 6 and len(row_text) < 180 and "click here" not in row_low:
-                dossier["age_criteria"].append(row_text)
+        if intent_type in ["INTENT_NOTIFICATION", "INTENT_RESULT", "INTENT_ANSWER_KEY", "INTENT_SYLLABUS"]:
+            query = f"{domain_filter}{title} official pdf"
+        else:
+            query = f"{domain_filter}{title} apply online registration link"
 
-        # 4. Total Vacancy & Category-Wise Distribution Extraction
-        tot_match = re.search(r'(?:Total\s+Vacanc(?:y|ies)|Total\s+Posts?)\s*[:\-]?\s*(\d{1,6})\b', row_text, re.IGNORECASE)
-        if tot_match:
-            dossier["total_vacancy"] = f"{tot_match.group(1)} Posts"
+        search_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+        html = resilient_stealth_fetch(search_url)
+        if not html:
+            return "#"
 
-        cells = [re.sub(r'\s+', ' ', td.get_text(" ", strip=True)).strip() for td in tr.find_all(["td", "th"])]
-        if len(cells) >= 2:
-            # Check if row has category breakdown headers or values (UR, OBC, EWS, SC, ST, Total)
-            joined_c = " | ".join(cells)
-            if any(k in row_low for k in ["ur", "obc", "ews", "sc", "st", "general", "post name", "trade name", "eligibility", "qualification"]):
-                if "click here" not in row_low and len(dossier["vacancy_rows"]) < 10:
-                    dossier["vacancy_rows"].append(cells[:6])
+        soup = BeautifulSoup(html, "html.parser")
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if "uddg=" in href:
+                try:
+                    parsed_qs = urllib.parse.parse_qs(urlparse(href).query)
+                    real_url = parsed_qs.get("uddg", [""])[0]
+                    if real_url and is_specific_deep_url(real_url):
+                        return real_url
+                except Exception:
+                    continue
+            elif href.startswith("http") and "duckduckgo.com" not in href:
+                if is_specific_deep_url(href):
+                    return href
+        return "#"
 
-        # 5. Selection Process & Exam Pattern Extraction
-        if any(k in row_low for k in ["selection process", "stage 1", "tier 1", "prelims", "mains", "physical test", "pet", "pst", "document verification", "medical exam", "skill test"]):
-            if len(dossier["selection_process"]) < 6 and "click here" not in row_low and len(row_text) < 200:
-                dossier["selection_process"].append(row_text)
+    @staticmethod
+    def extract_and_verify(title, source_urls_list, meta):
+        data = {
+            "apply_link": "#",
+            "notif_url": "#",
+            "result_url": "#",
+            "answer_key_url": "#",
+            "admit_card_url": "#",
+            "syllabus_url": "#",
+            "download_pdf": "#",
+            "official_web": OFFICIAL_HUBS[meta["board_key"]]["home"] if meta["board_key"] else "#",
+            "dates": {
+                "notification_date": "To be notified in Official PDF",
+                "apply_start_date": "To be notified in Official PDF",
+                "last_date": "To be notified in Official PDF",
+                "extended_date": "N/A",
+                "exam_date": "As per Official Schedule",
+                "admit_card_date": "Before Exam",
+                "answer_key_date": "After Exam",
+                "result_date": "As per Board Update"
+            },
+            "fees": [],
+            "age_criteria": [],
+            "vacancy_breakdown": [],
+            "selection_process": [],
+            "exam_pattern": [],
+            "dynamic_admin_review_boxes": {},
+            "combined_sources": [],
+            "accuracy_score": 0
+        }
 
-        if any(k in row_low for k in ["negative marking", "questions", "marks", "duration", "minutes", "objective type", "reasoning", "quantitative", "general awareness"]):
-            if len(dossier["exam_pattern"]) < 6 and "click here" not in row_low and len(row_text) < 200:
-                dossier["exam_pattern"].append(row_text)
+        date_pattern = re.compile(r'(\d{1,2}[\/\-\.\s](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|[01]?\d)[\/\-\.\s]202[4-9])', re.IGNORECASE)
 
-        # 6. INTENT-AWARE ROW-CONTEXT LINK EXTRACTION (Crucial Fix!)
-        anchors = tr.find_all("a", href=True)
-        for a in anchors:
-            href = urljoin(article_url, a["href"].strip())
-            a_text = a.get_text(" ", strip=True).lower()
-            combined_context = f"{row_low} {a_text}"
+        # PHASE 1: COMBINE DATA FROM ALL MATCHED AGGREGATOR PAGES
+        for src_name, article_url in source_urls_list:
+            if not article_url or not article_url.startswith("http"):
+                continue
+            html = resilient_stealth_fetch(article_url)
+            if not html:
+                continue
 
-            # Check for PDF / Notification
-            if is_clean_external_url(href, allow_aggregator_pdf=True):
-                if ".pdf" in href.lower() or any(k in combined_context for k in ["notification", "advt", "advertisement", "brochure", "short notice", "information bulletin"]):
-                    if any(k in combined_context for k in ["syllabus", "exam pattern"]):
-                        if not dossier["links"]["syllabus_link"]:
-                            dossier["links"]["syllabus_link"] = href
-                    elif any(k in combined_context for k in ["answer key", "response sheet"]):
-                        if not dossier["links"]["answer_key_link"]:
-                            dossier["links"]["answer_key_link"] = href
-                    elif any(k in combined_context for k in ["result", "merit list", "cutoff", "list of selected"]):
-                        if not dossier["links"]["result_link"]:
-                            dossier["links"]["result_link"] = href
-                    else:
-                        if not dossier["links"]["notif_pdf"]:
-                            dossier["links"]["notif_pdf"] = href
+            data["combined_sources"].append(src_name)
+            soup = BeautifulSoup(html, "html.parser")
 
-            # Check for External Official Portal Links (Apply, Admit Card, Answer Key, Result, Syllabus, Official Site)
-            if is_clean_external_url(href, allow_aggregator_pdf=False):
-                if any(k in combined_context for k in ["apply online", "registration", "online form", "candidate login", "apply link", "new registration"]):
-                    if not dossier["links"]["apply_link"]:
-                        dossier["links"]["apply_link"] = href
-                elif any(k in combined_context for k in ["admit card", "hall ticket", "call letter", "exam city"]):
-                    if not dossier["links"]["admit_card_link"]:
-                        dossier["links"]["admit_card_link"] = href
-                elif any(k in combined_context for k in ["answer key", "response sheet", "question paper", "objection"]):
-                    if not dossier["links"]["answer_key_link"]:
-                        dossier["links"]["answer_key_link"] = href
-                elif any(k in combined_context for k in ["download result", "check result", "result", "merit list", "score card", "scorecard"]):
-                    if not dossier["links"]["result_link"]:
-                        dossier["links"]["result_link"] = href
-                elif any(k in combined_context for k in ["syllabus", "exam pattern"]):
-                    if not dossier["links"]["syllabus_link"]:
-                        dossier["links"]["syllabus_link"] = href
-                elif any(k in combined_context for k in ["official website", "official portal", "official site"]):
-                    if not dossier["links"]["official_site"]:
-                        dossier["links"]["official_site"] = href
+            for elem in soup.find_all(["li", "tr", "p"]):
+                txt = re.sub(r'\s+', ' ', elem.get_text(" ", strip=True)).strip()
+                t_low = txt.lower()
+                if len(txt) < 6 or len(txt) > 350:
+                    continue
 
-    # --- STEP C: RESOLVE REAL POST DATE ---
-    valid_dates = [d for d in meta_dates if d <= datetime.now() + timedelta(days=365)]
-    if valid_dates:
-        # Pick the most recent past/current date as the post release/update date
-        past_or_today = [d for d in valid_dates if d <= datetime.now() + timedelta(days=2)]
-        chosen_dt = max(past_or_today) if past_or_today else min(valid_dates)
-        dossier["dates"]["real_post_date_obj"] = chosen_dt
-        dossier["dates"]["real_post_date_str"] = chosen_dt.strftime("%d %b %Y")
-        if dossier["dates"]["notification_date"] == "See Official Notice":
-            dossier["dates"]["notification_date"] = chosen_dt.strftime("%d %b %Y")
+                found_dates = date_pattern.findall(txt)
+                if found_dates:
+                    d_val = found_dates[-1]
+                    if any(k in t_low for k in ["notification", "advt", "published", "release"]):
+                        data["dates"]["notification_date"] = d_val
+                    if any(k in t_low for k in ["begin", "start", "starting", "opening"]):
+                        data["dates"]["apply_start_date"] = d_val
+                    if any(k in t_low for k in ["last date", "closing", "apply online last"]):
+                        data["dates"]["last_date"] = d_val
+                    if any(k in t_low for k in ["extended", "revised last date"]):
+                        data["dates"]["extended_date"] = d_val
+                    if any(k in t_low for k in ["exam date", "cbt date", "prelims", "mains", "written exam"]):
+                        data["dates"]["exam_date"] = d_val
+                    if any(k in t_low for k in ["admit card", "hall ticket"]):
+                        data["dates"]["admit_card_date"] = d_val
+                    if any(k in t_low for k in ["answer key"]):
+                        data["dates"]["answer_key_date"] = d_val
+                    if any(k in t_low for k in ["result", "merit"]):
+                        data["dates"]["result_date"] = d_val
 
-    return dossier
+                if ("₹" in txt or "rs." in t_low or "rs " in t_low or "fee" in t_low or "nil" in t_low) and any(c in t_low for c in ["general", "obc", "sc", "st", "ews", "female", "pwd", "all candidates"]):
+                    if txt not in data["fees"] and len(data["fees"]) < 6:
+                        data["fees"].append(txt)
 
-async def verify_and_enrich_from_official_hub(title, primary_intent, dossier, loop, semaphore):
-    """
-    If specific intent link or PDF wasn't on the aggregator page, crawl the mapped official portal's
-    notice board / career page to find the exact active link or PDF for this specific post.
-    """
-    hub = match_hub_for_title(title)
-    links = dossier["links"]
+                if any(k in t_low for k in ["minimum age", "maximum age", "age limit", "age relaxation", "years"]) and any(d in txt for d in ["18", "20", "21", "25", "27", "28", "30", "32", "35", "37", "40", "42", "45"]):
+                    if txt not in data["age_criteria"] and len(data["age_criteria"]) < 6:
+                        data["age_criteria"].append(txt)
 
-    if hub:
-        if not links["official_site"]:
-            links["official_site"] = hub["home"]
+                if any(k in t_low for k in ["written exam", "cbt", "prelims", "mains", "skill test", "typing", "physical", "document verification", "medical", "interview"]) and len(txt) < 180:
+                    if txt not in data["selection_process"] and len(data["selection_process"]) < 6:
+                        data["selection_process"].append(txt)
 
-        # Crawl official notice board if specific intent link is still missing
-        need_crawl = (
-            (primary_intent == "INTENT_APPLY" and not links["apply_link"]) or
-            (primary_intent == "INTENT_NOTIFICATION" and not links["notif_pdf"]) or
-            (primary_intent == "INTENT_ADMIT_CARD" and not links["admit_card_link"]) or
-            (primary_intent == "INTENT_ANSWER_KEY" and not links["answer_key_link"]) or
-            (primary_intent == "INTENT_RESULT" and not links["result_link"])
-        )
-        if need_crawl:
-            notice_html = await safe_fetch_non_blocking(hub["notices"], loop, semaphore, timeout=18.0)
-            if notice_html:
-                soup = BeautifulSoup(notice_html, "html.parser")
-                title_tokens = [w for w in re.findall(r'[a-zA-Z0-9]{3,}', title.lower()) if w not in {"recruitment", "online", "form", "exam", "examination", "2026", "post", "posts"}]
-                for a in soup.find_all("a", href=True):
-                    href = urljoin(hub["notices"], a["href"].strip())
-                    a_txt = a.get_text(" ", strip=True).lower()
-                    if not href.startswith("http"):
+            for table in soup.find_all("table"):
+                rows = table.find_all("tr")
+                for r in rows[:15]:
+                    cols = [re.sub(r'\s+', ' ', c.get_text(" ", strip=True)).strip() for c in r.find_all(["td", "th"])]
+                    cols = [c for c in cols if c]
+                    if len(cols) >= 2:
+                        row_str = " | ".join(cols)
+                        r_low = row_str.lower()
+                        if any(k in r_low for k in ["ur", "general", "obc", "ews", "sc", "st", "total", "post name", "vacancy", "seats"]):
+                            if cols not in data["vacancy_breakdown"] and len(data["vacancy_breakdown"]) < 12:
+                                data["vacancy_breakdown"].append(cols)
+                        elif any(k in r_low for k in ["subject", "questions", "marks", "duration", "reasoning", "aptitude", "english", "awareness", "general studies"]):
+                            if cols not in data["exam_pattern"] and len(data["exam_pattern"]) < 10:
+                                data["exam_pattern"].append(cols)
+
+            for container in soup.find_all(["tr", "li", "p", "div"]):
+                row_text = re.sub(r'\s+', ' ', container.get_text(" ", strip=True)).strip().lower()
+                if len(row_text) > 600:
+                    continue
+                for a in container.find_all("a", href=True):
+                    href = urljoin(article_url, a["href"].strip())
+                    if not href.startswith("http") or any(b in href.lower() for b in BLOCK_DOMAINS):
                         continue
-                    # Match keywords from post title
-                    if any(tok in a_txt or tok in href.lower() for tok in title_tokens[:4]):
-                        if ".pdf" in href.lower() and not links["notif_pdf"]:
-                            links["notif_pdf"] = href
-                        elif not links["apply_link"]:
-                            links["apply_link"] = href
+                    if is_aggregator_page_link(href):
+                        continue
 
-        # Use hub's dedicated application portal if still missing
-        if not links["apply_link"]:
-            links["apply_link"] = hub.get("apply_portal", hub["notices"])
-        if not links["notif_pdf"]:
-            links["notif_pdf"] = hub["notices"]
+                    a_text = re.sub(r'\s+', ' ', a.get_text(" ", strip=True)).strip().lower()
+                    combo = f"{row_text} {a_text}"
+                    h_low = href.lower()
 
-    # Map primary intent link strictly
-    if primary_intent == "INTENT_ANSWER_KEY":
-        primary_url = links["answer_key_link"] or links["notif_pdf"] or links["apply_link"] or links["official_site"]
-    elif primary_intent == "INTENT_RESULT":
-        primary_url = links["result_link"] or links["notif_pdf"] or links["apply_link"] or links["official_site"]
-    elif primary_intent == "INTENT_ADMIT_CARD":
-        primary_url = links["admit_card_link"] or links["apply_link"] or links["notif_pdf"] or links["official_site"]
-    elif primary_intent == "INTENT_SYLLABUS":
-        primary_url = links["syllabus_link"] or links["notif_pdf"] or links["official_site"]
-    elif primary_intent == "INTENT_NOTIFICATION":
-        primary_url = links["notif_pdf"] or links["apply_link"] or links["official_site"]
-    else:
-        primary_url = links["apply_link"] or links["notif_pdf"] or links["official_site"]
+                    if any(w in combo for w in ["official website", "official portal", "official site"]):
+                        if data["official_web"] == "#":
+                            data["official_web"] = href
 
-    # Synchronize all sub-links so no field is ever empty, '#' or Google search
-    if not links["apply_link"]:
-        links["apply_link"] = primary_url
-    if not links["notif_pdf"]:
-        links["notif_pdf"] = primary_url
-    if not links["official_site"]:
-        links["official_site"] = primary_url
+                    for dyn_kw in DYNAMIC_BOX_KEYWORDS:
+                        if dyn_kw in combo and is_specific_deep_url(href):
+                            box_label = dyn_kw.title()
+                            if box_label not in data["dynamic_admin_review_boxes"]:
+                                data["dynamic_admin_review_boxes"][box_label] = href
 
-    dossier["primary_verified_link"] = primary_url
-    return dossier
+                    is_pdf = is_specific_deep_url(href, require_pdf=True)
+                    is_deep = is_specific_deep_url(href, require_pdf=False)
 
-def passes_one_month_freshness_gate(dossier, title):
-    """
-    Strictly rejects posts older than 30 days (1 month) unless their last_date or exam_date is still in the future.
-    """
-    t_low = title.lower()
-    # Reject explicitly outdated years in title
-    if any(old_yr in t_low for old_yr in ["2021", "2022", "2023", "2024"]):
-        if "2026" not in t_low and "2025" not in t_low:
-            return False
+                    if any(w in combo for w in ["answer key", "response sheet", "objection"]) and is_deep:
+                        if data["answer_key_url"] == "#":
+                            data["answer_key_url"] = href
+                            data["accuracy_score"] += 5
 
-    now = datetime.now()
-    cutoff_past = now - timedelta(days=31)
+                    elif any(w in combo for w in ["result", "merit list", "score card", "selection list", "cutoff"]) and is_deep:
+                        if data["result_url"] == "#" or (is_pdf and not data["result_url"].lower().endswith(".pdf")):
+                            data["result_url"] = href
+                            data["accuracy_score"] += 5
 
-    # Check if last_date is in the future (still active to apply)
-    last_dt = parse_any_date_string(dossier["dates"].get("last_date", ""))
-    if last_dt and last_dt >= now - timedelta(days=3):
-        return True
+                    elif any(w in combo for w in ["admit card", "hall ticket", "call letter", "exam city"]) and is_deep:
+                        if data["admit_card_url"] == "#":
+                            data["admit_card_url"] = href
+                            data["accuracy_score"] += 5
 
-    # Check real_post_date_obj
-    post_dt = dossier["dates"].get("real_post_date_obj")
-    if post_dt:
-        return post_dt >= cutoff_past
+                    elif any(w in combo for w in ["syllabus", "exam pattern"]) and is_deep:
+                        if data["syllabus_url"] == "#":
+                            data["syllabus_url"] = href
+                            data["accuracy_score"] += 4
 
-    # If no parseable date was found at all on the page, reject if we don't have a verified external link
-    return bool(dossier.get("primary_verified_link"))
+                    elif any(w in combo for w in ["apply online", "registration", "login", "online form", "apply now"]) and not h_low.endswith(".pdf") and is_deep:
+                        if data["apply_link"] == "#":
+                            data["apply_link"] = href
+                            data["accuracy_score"] += 5
+
+                    elif (is_pdf or any(w in combo for w in ["notification", "official notice", "advertisement", "advt", "full notice"])) and is_deep:
+                        if data["notif_url"] == "#" or (is_pdf and not data["notif_url"].lower().endswith(".pdf")):
+                            data["notif_url"] = href
+                            data["accuracy_score"] += 5
+
+        # PHASE 2: OFFICIAL BOARD DEEP CRAWL (If specific links are missing)
+        if meta["board_key"]:
+            hub = OFFICIAL_HUBS[meta["board_key"]]
+            board_html = resilient_stealth_fetch(hub["notices"])
+            if board_html:
+                b_soup = BeautifulSoup(board_html, "html.parser")
+                t_tokens = [w for w in re.findall(r'[a-z0-9]+', title.lower()) if len(w) > 2 and w not in ["online", "form", "2026", "recruitment", "post", "apply", "result"]]
+
+                for a in b_soup.find_all("a", href=True):
+                    full_url = urljoin(hub["home"], a["href"].strip())
+                    a_txt = a.get_text(" ", strip=True).lower()
+                    if any(tok in a_txt or tok in full_url.lower() for tok in t_tokens):
+                        if is_specific_deep_url(full_url, require_pdf=True):
+                            if meta["primary_intent"] == "INTENT_RESULT" and data["result_url"] == "#":
+                                data["result_url"] = full_url
+                                data["accuracy_score"] += 6
+                            elif meta["primary_intent"] == "INTENT_ANSWER_KEY" and data["answer_key_url"] == "#":
+                                data["answer_key_url"] = full_url
+                                data["accuracy_score"] += 6
+                            elif data["notif_url"] == "#":
+                                data["notif_url"] = full_url
+                                data["accuracy_score"] += 6
+                        elif is_specific_deep_url(full_url) and any(k in a_txt or k in full_url.lower() for k in ["apply", "reg", "login", "candidate"]):
+                            if data["apply_link"] == "#":
+                                data["apply_link"] = full_url
+                                data["accuracy_score"] += 5
+
+            if data["apply_link"] == "#" and is_specific_deep_url(hub.get("apply_portal", "#")):
+                data["apply_link"] = hub["apply_portal"]
+                data["accuracy_score"] += 4
+
+        # PHASE 3: CHROME SEARCH ENGINE FALLBACK FOR PRIMARY INTENT
+        intent = meta["primary_intent"]
+        if intent == "INTENT_APPLY" and not is_specific_deep_url(data["apply_link"]):
+            found = DeepVerificationAndExtractionAgent.search_chrome_fallback(title, intent, data["official_web"])
+            if is_specific_deep_url(found):
+                data["apply_link"] = found
+                data["accuracy_score"] += 4
+
+        elif intent == "INTENT_NOTIFICATION" and not is_specific_deep_url(data["notif_url"]):
+            found = DeepVerificationAndExtractionAgent.search_chrome_fallback(title, intent, data["official_web"])
+            if is_specific_deep_url(found):
+                data["notif_url"] = found
+                data["accuracy_score"] += 4
+
+        elif intent == "INTENT_RESULT" and not is_specific_deep_url(data["result_url"]):
+            found = DeepVerificationAndExtractionAgent.search_chrome_fallback(title, intent, data["official_web"])
+            if is_specific_deep_url(found):
+                data["result_url"] = found
+                data["accuracy_score"] += 4
+
+        elif intent == "INTENT_ADMIT_CARD" and not is_specific_deep_url(data["admit_card_url"]):
+            found = DeepVerificationAndExtractionAgent.search_chrome_fallback(title, intent, data["official_web"])
+            if is_specific_deep_url(found):
+                data["admit_card_url"] = found
+                data["accuracy_score"] += 4
+
+        elif intent == "INTENT_ANSWER_KEY" and not is_specific_deep_url(data["answer_key_url"]):
+            found = DeepVerificationAndExtractionAgent.search_chrome_fallback(title, intent, data["official_web"])
+            if is_specific_deep_url(found):
+                data["answer_key_url"] = found
+                data["accuracy_score"] += 4
+
+        if intent == "INTENT_RESULT" and is_specific_deep_url(data["result_url"]):
+            data["download_pdf"] = data["result_url"]
+        elif intent == "INTENT_ANSWER_KEY" and is_specific_deep_url(data["answer_key_url"]):
+            data["download_pdf"] = data["answer_key_url"]
+        elif intent == "INTENT_SYLLABUS" and is_specific_deep_url(data["syllabus_url"]):
+            data["download_pdf"] = data["syllabus_url"]
+        elif is_specific_deep_url(data["notif_url"]):
+            data["download_pdf"] = data["notif_url"]
+        else:
+            data["download_pdf"] = "#"
+
+        return data
+
+    @staticmethod
+    def is_primary_intent_satisfied(meta, data):
+        """
+        STRICT ENFORCEMENT RULE:
+        Every post MUST have its specific intent link verified & non-generic.
+        """
+        intent = meta["primary_intent"]
+        if intent == "INTENT_APPLY":
+            return is_specific_deep_url(data["apply_link"]) or is_specific_deep_url(data["notif_url"])
+        elif intent == "INTENT_NOTIFICATION":
+            return is_specific_deep_url(data["notif_url"])
+        elif intent == "INTENT_RESULT":
+            return is_specific_deep_url(data["result_url"]) or is_specific_deep_url(data["notif_url"])
+        elif intent == "INTENT_ADMIT_CARD":
+            return is_specific_deep_url(data["admit_card_url"]) or is_specific_deep_url(data["apply_link"])
+        elif intent == "INTENT_ANSWER_KEY":
+            return is_specific_deep_url(data["answer_key_url"]) or is_specific_deep_url(data["notif_url"])
+        elif intent == "INTENT_SYLLABUS":
+            return is_specific_deep_url(data["syllabus_url"]) or is_specific_deep_url(data["notif_url"])
+        return False
 
 # ==============================================================================
-# LAYER 5: INTENT-AWARE NON-REPEATING CHALLENGING QUOTE ENGINE
+# LAYER 6B & 7: OPTION B (AGENTIC AI MENTOR + 90-DAY STRATEGY) & OPTION A BUILDER
 # ==============================================================================
-INTENT_QUOTE_TEMPLATES = {
-    "INTENT_APPLY": [
-        "🔥 [{exam} Registration Challenge]: Form bharna sirf pehla kadam hai—aaj se rozana 8 ghante ki kadi tapasya ka sankalp lein aur apni seat pakki karein!",
-        "⚡ [{exam} Mission Day-1]: Lakhon candidates form bharenge, par selection unhi ka hoga jo aaj hi syllabus ko apna hathiyar banayenge!",
-        "🎯 [{exam} Lakshya Vedh]: Application window khul chuki hai—bina waqt gawaye form submit karein aur pehle mock test se apni raneeti shuru karein!",
-        "🦁 [{exam} Sangharsh Shuru]: Yeh sirf ek online form nahi, aapke sapno ka appointment letter hai—aaj se har ek minute koetihasik banayein!"
-    ],
-    "INTENT_ADMIT_CARD": [
-        "⚔️ [{exam} Admit Card Out]: Ranbhoomi ka bulawa aa chuka hai! Ab naye topics chhodkar sirf revision, speed aur 100% accuracy par prahar karein!",
-        "⏱️ [{exam} Final Countdown]: Hall ticket aapke haath mein hai—exam hall ka pressure wahi jeetega jiski mock practice mein loh-anushasan raha hai!",
-        "🛡️ [{exam} Exam Hall Temperament]: Admit card download karein aur aakhiri dino mein apni galtiyon ko zero par layein—ab waqt faisle ka hai!",
-        "🚀 [{exam} Antim Prahar]: Mehnat ke mahine ab kuch ghanto ke imtihaan mein badalne wale hain—apne aatmavishwas ko chattan jaisa majboot rakhein!"
-    ],
-    "INTENT_ANSWER_KEY": [
-        "🔍 [{exam} Answer Key Challenge]: Har ek sahi aur galat sawal ka post-mortem karein—yahi deep analysis aapko agle charan ka topper banayega!",
-        "📊 [{exam} Score Evaluation]: Answer key aa chuki hai! Apne raw marks check karein, doubtful questions par objection uthayein aur Mains/Next Stage ki raneeti banayein!",
-        "🧠 [{exam} Self-Audit Mode]: Response sheet sirf score nahi dikhati, aapki taiyari ka aaina dikhati hai—apne weak zones ko aaj hi chinhit karein!",
-        "⚡ [{exam} Next Stage Readiness]: Answer key se apna sacha aakalan karein aur bina ruke agle padav ki taiyari mein dugni taqat jhonk dein!"
-    ],
-    "INTENT_RESULT": [
-        "🏆 [{exam} Result Milestone]: Parinaam ghoshit ho chuka hai! Safal abhyarthiyon ko badhai aur agle charan/DV ke liye kamar kas lein—safar abhi poora nahi hua!",
-        "🌟 [{exam} Merit List Update]: Jinhe safalta mili wo agle padav ko fateh karein, aur jo kuch anko se chooke wo dugne josh se agle imtihaan par tut padein!",
-        "🎖️ [{exam} Selection Verdict]: Result aapki kadi mehnat ki gawahi hai—apna roll number check karein aur aage ke document verification ki har shart poori karein!",
-        "🔥 [{exam} Victory & Persistence]: Ek parinaam aapki kabiliyat ki seema nahi tay karta—apna scorecard dekhein aur apne lakshya tak bina thake aage badhein!"
-    ],
-    "INTENT_SYLLABUS": [
-        "📘 [{exam} Blueprint Decoded]: Bina syllabus samjhe taiyari andhere mein teer chalane jaisi hai—har ek topic ko print karein aur ek-ek karke khatam karein!",
-        "🧭 [{exam} Master Syllabus]: Toppers alag kitabein nahi padhte, wo syllabus ke har point aur exam pattern ko ungliyon par yaad rakhte hain!",
-        "📐 [{exam} Strategy Map]: Official syllabus aur weightage aapke samne hai—high-scoring subjects ko pehle 30 dino mein poori tarah मुट्ठी mein karein!"
-    ],
-    "INTENT_NOTIFICATION": [
-        "📢 [{exam} Official Notification Out]: Vigyapti jaari ho chuki hai! Eligibility, age criteria aur exam pattern ko dhyan se padhein aur aaj hi 90-din ka plan lock karein!",
-        "📜 [{exam} Recruitment Alert]: Sarkari naukri ka naya avsar dastak de raha hai—official PDF ka har niyam samjhein aur bheed se aage nikal jayein!",
-        "🔥 [{exam} Golden Opportunity]: Notification PDF aa chuka hai—vacancy kam ho ya zyada, aapko sirf apni ek pakki seat ke liye ladna hai!"
-    ]
-}
+class OptionB_GeminiMentorAgent:
+    @staticmethod
+    def generate_mentor_and_90day_strategy(title, meta, use_ai=True):
+        if use_ai and GEMINI_API_KEY:
+            prompt = (
+                f"Act as an expert Indian Competitive Exam Mentor. For the post '{title}' "
+                f"(Category: {meta['category']}, Intent: {meta['primary_intent']}, State: {meta['state']}), "
+                f"write in Hinglish: (1) A 3-line actionable mentor advice, and (2) A bulleted Last 3 Months "
+                f"(Month 1, Month 2, Month 3) Exam Preparation Strategy."
+            )
+            payload = json.dumps({
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.65, "maxOutputTokens": 450}
+            }).encode("utf-8")
 
-def generate_unique_intent_quote(title, primary_intent, used_quotes_set, counter_seed):
-    clean_exam = re.sub(r'\b(online form|recruitment|2026|2025|apply online|download|notification)\b', '', title, flags=re.IGNORECASE)
-    clean_exam = re.sub(r'\s+', ' ', clean_exam).strip()[:38] or title[:35]
+            for model in ["gemini-2.5-flash", "gemini-2.0-flash"]:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+                try:
+                    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        res = json.loads(resp.read().decode("utf-8"))
+                        ai_text = res["candidates"][0]["content"]["parts"][0]["text"].strip()
+                        return ai_text.replace("\n", "<br>")
+                except Exception:
+                    continue
 
-    templates = INTENT_QUOTE_TEMPLATES.get(primary_intent, INTENT_QUOTE_TEMPLATES["INTENT_APPLY"])
-    for idx in range(len(templates)):
-        candidate = templates[(counter_seed + idx) % len(templates)].format(exam=clean_exam)
-        if candidate.lower() not in used_quotes_set:
-            used_quotes_set.add(candidate.lower())
-            return candidate
+        return (
+            f"<strong>💡 Mentor Key Insight:</strong> <strong>{title}</strong> mein high accuracy aur time management sabse bada game-changer hai. Official notification PDF aur specific link niche verify karke attach kar diya gaya hai.<br><br>"
+            f"<strong>📅 Month 1 (Foundation & Syllabus Completion):</strong> Sabse pehle core subjects (Quant/Technical, Reasoning, GK/Current Affairs, Language) ke high-weightage chapters cover karein aur pichhle 5 saal ke Previous Year Papers (PYQs) ka trend dekhein.<br>"
+            f"<strong>📅 Month 2 (Speed Drill & Sectional Tests):</strong> Rozana 2 sectional quizzes lagayein, calculation/short-tricks ke notes banayein aur pichhle 6 mahine ka Current Affairs + Static GK revise karein.<br>"
+            f"<strong>📅 Month 3 (Full-Length Mock Tests & Error Analysis):</strong> Har din 1 Full-Length CBT Mock Test exam-time slot par dein aur galat hue questions ki 'Error Notebook' banakar final 15 din me baar-baar revise karein."
+        )
 
-    # Guaranteed unique fallback with hash suffix if all templates for that exact exam title were used
-    unique_tag = hashlib.md5(f"{title}_{primary_intent}_{counter_seed}".encode("utf-8")).hexdigest()[:4].upper()
-    fallback_quote = f"🔥 [{clean_exam} | {primary_intent.replace('INTENT_', '')} #{unique_tag}]: Apni kadi mehnat, rozana mock analysis aur atoot anushasan se is pariksha mein apna parcham lehrayein!"
-    used_quotes_set.add(fallback_quote.lower())
-    return fallback_quote
+class OptionA_RichDossierBuilder:
+    @staticmethod
+    def build_html(title, meta, data, unique_quote, mentor_strategy_html):
+        dates = data["dates"]
+
+        if data["fees"]:
+            fee_items = "".join([f"<li>{f}</li>" for f in data["fees"]])
+        else:
+            fee_items = (
+                "<li><strong>General / OBC / EWS:</strong> Refer Official Notification PDF for post-wise fee.</li>"
+                "<li><strong>SC / ST / PwD / Female:</strong> Exempted / Concessional as per Government norms.</li>"
+                "<li><strong>Payment Mode:</strong> Online via UPI, Net Banking, Debit/Credit Card.</li>"
+            )
+
+        if data["age_criteria"]:
+            age_items = "".join([f"<li>{a}</li>" for a in data["age_criteria"]])
+        else:
+            age_items = (
+                "<li><strong>Minimum Age:</strong> 18 - 21 Years (Post-wise variation as per rules).</li>"
+                "<li><strong>Maximum Age:</strong> As per Official Notification PDF.</li>"
+                "<li><strong>Age Relaxation:</strong> SC/ST: +5 Years, OBC (NCL): +3 Years, PwBD: +10 Years.</li>"
+            )
+
+        if data["vacancy_breakdown"]:
+            vac_rows_html = ""
+            for idx, r_cols in enumerate(data["vacancy_breakdown"]):
+                bg = "#f8fafc" if idx % 2 == 0 else "#ffffff"
+                cells = "".join([f"<td style='padding:8px 10px; border:1px solid #cbd5e1;'>{c}</td>" for c in r_cols])
+                vac_rows_html += f"<tr style='background:{bg};'>{cells}</tr>"
+            vacancy_section = f"<table style='width:100%; border-collapse:collapse; margin-bottom:18px; font-size:13.5px;'>{vac_rows_html}</table>"
+        else:
+            vacancy_section = (
+                "<p style='font-size:14px; color:#334155;'>Category-wise (UR / OBC / EWS / SC / ST) post distribution aur post-wise educational qualification ke liye niche attach ki gayi <strong>Official Notification PDF</strong> dekhein.</p>"
+            )
+
+        if data["selection_process"]:
+            sel_items = "".join([f"<li>{s}</li>" for s in data["selection_process"]])
+        else:
+            sel_items = (
+                "<li><strong>Stage 1:</strong> Computer Based Test (CBT) / Written Examination.</li>"
+                "<li><strong>Stage 2:</strong> Mains / Skill Test / Physical Test (Post ke anusaar).</li>"
+                "<li><strong>Stage 3:</strong> Document Verification (DV) & Medical Examination.</li>"
+            )
+
+        if data["exam_pattern"]:
+            pat_rows_html = ""
+            for idx, r_cols in enumerate(data["exam_pattern"]):
+                bg = "#f8fafc" if idx % 2 == 0 else "#ffffff"
+                cells = "".join([f"<td style='padding:8px 10px; border:1px solid #cbd5e1;'>{c}</td>" for c in r_cols])
+                pat_rows_html += f"<tr style='background:{bg};'>{cells}</tr>"
+            pattern_table = f"<table style='width:100%; border-collapse:collapse; margin-bottom:18px; font-size:13.5px;'>{pat_rows_html}</table>"
+        else:
+            pattern_table = "<p style='font-size:14px; color:#334155;'>Detailed subject-wise marking scheme, negative marking aur exam duration Official Notification PDF mein uplabdh hai.</p>"
+
+        dyn_boxes_html = ""
+        if data["dynamic_admin_review_boxes"]:
+            rows = "".join([
+                f"<tr style='border:1px solid #cbd5e1;'><td style='padding:9px; font-weight:600;'>📌 {lbl}</td>"
+                f"<td style='padding:9px;'><a href='{url}' target='_blank' rel='noopener' style='color:#1d4ed8; font-weight:700;'>Click Here (Verified Link)</a></td></tr>"
+                for lbl, url in data["dynamic_admin_review_boxes"].items()
+            ])
+            dyn_boxes_html = f"""
+            <h3 style="color:#0f172a; border-bottom:2px solid #cbd5e1; padding-bottom:8px; margin-top:24px;">🆕 Additional Official Notices & Dynamic Links</h3>
+            <table style="width:100%; border-collapse:collapse; margin-bottom:20px; font-size:14px;">{rows}</table>
+            """
+
+        # 1. SHORT VIEW DETAIL CARD (With Unique Intent-Based Challenging Quote Banner)
+        short_view = f"""
+<div class="short-view-card" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; padding:18px; margin-bottom:24px; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+    <div class="unique-challenging-quote" style="background:linear-gradient(90deg, #fffbeb 0%, #fef3c7 100%); border-left:4px solid #d97706; padding:11px 15px; margin-bottom:14px; border-radius:4px; font-style:italic; color:#92400e; font-size:13.5px; font-weight:600;">
+        "{unique_quote}"
+    </div>
+    <div style="background:#eef6ff; border-left:4px solid #1a73e8; padding:12px 16px; margin-bottom:14px; border-radius:4px;">
+        <span style="color:#174ea6; font-weight:700; font-size:15px;">📢 Short Information ({meta['primary_intent'].replace('INTENT_', '')}):</span>
+        <p style="margin:6px 0 0; color:#1e293b; font-size:14px; line-height:1.6;">
+            <strong>{title}</strong> ke liye official verification ke baad specific direct link aur PDF dossier taiyar kar diya gaya hai. Combined Verified Sources: <strong>{', '.join(set(data['combined_sources'])) or 'Official Portal'}</strong>.
+        </p>
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:10px; font-size:13px; color:#334155;">
+        <span style="background:#f1f5f9; padding:6px 12px; border-radius:4px;"><strong>📂 Category:</strong> {meta['category']}</span>
+        <span style="background:#dcfce7; color:#166534; padding:6px 12px; border-radius:4px;"><strong>🏷️ Job Type:</strong> {meta['job_type']}</span>
+        <span style="background:#fef3c7; color:#92400e; padding:6px 12px; border-radius:4px;"><strong>📍 State:</strong> {meta['state']}</span>
+        <span style="background:#fee2e2; color:#991b1b; padding:6px 12px; border-radius:4px;"><strong>⏳ Last Date:</strong> {dates['last_date']}</span>
+    </div>
+</div>
+"""
+
+        # 2. DEEP DETAIL DESCRIPTION (Immediately Below Short View)
+        deep_view = f"""
+<div class="deep-job-dossier" style="line-height:1.75; font-family:system-ui,-apple-system,sans-serif; color:#1e293b; border-top:2px dashed #94a3b8; padding-top:18px;">
+
+    <h3 style="color:#0f172a; border-bottom:2px solid #cbd5e1; padding-bottom:8px; margin-top:10px;">🗓️ 1. Official Important Dates & Schedule</h3>
+    <table style="width:100%; border-collapse:collapse; margin-bottom:20px; font-size:14px;">
+        <tr style="background:#f8fafc; border:1px solid #cbd5e1;"><td style="padding:9px; font-weight:600; width:48%;">Notification Release Date</td><td style="padding:9px;">{dates['notification_date']}</td></tr>
+        <tr style="border:1px solid #cbd5e1;"><td style="padding:9px; font-weight:600;">Application Begin Date</td><td style="padding:9px;">{dates['apply_start_date']}</td></tr>
+        <tr style="background:#f8fafc; border:1px solid #cbd5e1;"><td style="padding:9px; font-weight:600;">Last Date for Apply Online</td><td style="padding:9px; color:#dc2626; font-weight:700;">{dates['last_date']}</td></tr>
+        <tr style="border:1px solid #cbd5e1;"><td style="padding:9px; font-weight:600;">Extended Last Date</td><td style="padding:9px;">{dates['extended_date']}</td></tr>
+        <tr style="background:#f8fafc; border:1px solid #cbd5e1;"><td style="padding:9px; font-weight:600;">Exam Date / CBT Schedule</td><td style="padding:9px;">{dates['exam_date']}</td></tr>
+        <tr style="border:1px solid #cbd5e1;"><td style="padding:9px; font-weight:600;">Admit Card Release</td><td style="padding:9px;">{dates['admit_card_date']}</td></tr>
+        <tr style="background:#f8fafc; border:1px solid #cbd5e1;"><td style="padding:9px; font-weight:600;">Answer Key Release</td><td style="padding:9px;">{dates['answer_key_date']}</td></tr>
+        <tr style="border:1px solid #cbd5e1;"><td style="padding:9px; font-weight:600;">Result Declared Date</td><td style="padding:9px; color:#16a34a; font-weight:700;">{dates['result_date']}</td></tr>
+    </table>
+
+    <h3 style="color:#0f172a; border-bottom:2px solid #cbd5e1; padding-bottom:8px; margin-top:24px;">💳 2. Application Fee Details</h3>
+    <ul style="padding-left:20px; margin-bottom:20px; font-size:14px;">{fee_items}</ul>
+
+    <h3 style="color:#0f172a; border-bottom:2px solid #cbd5e1; padding-bottom:8px; margin-top:24px;">🎂 3. Age Criteria & Relaxation</h3>
+    <ul style="padding-left:20px; margin-bottom:20px; font-size:14px;">{age_items}</ul>
+
+    <h3 style="color:#0f172a; border-bottom:2px solid #cbd5e1; padding-bottom:8px; margin-top:24px;">📊 4. Category-Wise Post Distribution & Eligibility</h3>
+    {vacancy_section}
+
+    <h3 style="color:#0f172a; border-bottom:2px solid #cbd5e1; padding-bottom:8px; margin-top:24px;">⚙️ 5. Selection Process & Exam Pattern</h3>
+    <ul style="padding-left:20px; margin-bottom:14px; font-size:14px;">{sel_items}</ul>
+    {pattern_table}
+
+    <div class="mentor-editorial-block" style="background:#fdf2f8; border-left:4px solid #db2777; padding:16px; margin:24px 0; border-radius:6px;">
+        <h3 style="margin-top:0; color:#9d174d; font-size:16px;">🎯 6. Agentic AI Mentor & Last 3 Months (90-Day) Exam Strategy</h3>
+        <div style="font-size:14px; color:#831843; line-height:1.7;">{mentor_strategy_html}</div>
+    </div>
+
+    {dyn_boxes_html}
+</div>
+"""
+        return f"{short_view}\n{deep_view}".strip()
 
 # ==============================================================================
-# LAYER 6 & 7: OPTION A (FULL DOSSIER) + OPTION B (90-DAY STRATEGY) SYNTHESIZER
+# MASTER SYNTHESIZER ORCHESTRATOR
 # ==============================================================================
-def build_90_day_strategy(title, meta):
-    t = title.lower()
-    if any(k in t for k in ["ibps", "sbi", "rbi", "nabard", "bank", "lic", "niacl", "uiic", "idbi"]):
-        return {
-            "month_1": "Speed Math (Simplification, Quadratic, Number Series), Seating Arrangement & Linear/Circular Puzzles के बुनियादी नियम, और Reading Comprehension व Grammar (S-V-A) की रोज़ाना 3 घंटे प्रैक्टिस करें।",
-            "month_2": "Data Interpretation (Tabulated, Pie, Caselet), High-Level Floor/Box Puzzles, और पिछले 6 महीनों के Banking & Financial Current Affairs के साथ रोज़ाना 2 Sectional Timed Mocks लगाएं।",
-            "month_3": "रोज़ाना 1 Full-Length Prelims/Mains Mock Test दें, गलत हुए सवालों की Error Notebook बनाएं, और GA/Banking Awareness का बार-बार रिविज़न करके अपनी Accuracy 90%+ पर लॉक करें।"
-        }
-    elif any(k in t for k in ["ssc", "rrb", "railway", "ntpc", "group d", "alp", "cgl", "chsl", "mts", "gd", "delhipolice", "upssc", "bssc"]):
-        return {
-            "month_1": "Arithmetic & Advance Maths के सभी फॉर्मूले, Reasoning के Coding-Decoding/Series/Analogy पैटर्न, और NCERT आधारित Static GK व Science के मुख्य कॉन्सेप्ट्स पूरे करें।",
-            "month_2": "पिछले 5 वर्षों के TCS/Official Previous Year Questions (PYQs) को टाइमर के साथ हल करें। Calculation Speed बढ़ाने के लिए Tables, Squares, Cubes और Fraction-to-Percentage रोज़ दोहराएं।",
-            "month_3": "रोज़ाना 1-2 Full CBT Mock Tests का गहन विश्लेषण (Deep Analysis) करें, कमज़ोर टॉपिक्स पर 50-50 सवाल हल करें और पिछले 1 वर्ष के Current Affairs व Static GK को पक्का करें।"
-        }
-    else:
-        return {
-            "month_1": "आधिकारिक सिलेबस (Official Syllabus) को डिकोड करें, Core Domain Subjects और State/General Studies के फाउंडेशन नोट्स तैयार करें और बुनियादी अवधारणाओं को मज़बूत करें।",
-            "month_2": "Previous Year Question Papers (PYQs) के ट्रेंड को समझें, हाई-वेटेज टॉपिक्स पर विशेष पकड़ बनाएं और हर सप्ताह 3 विषयवार टेस्ट (Topic-wise Tests) देकर समय प्रबंधन सुधारें।",
-            "month_3": "अंतिम 30 दिनों में कोई नई किताब न छूएं—केवल अपने शॉर्ट नोट्स का रिविज़न करें, रोज़ाना 1 Full Mock Test दें और परीक्षा हॉल के टेम्परामेंट व एक्यूरेसी पर फोकस करें।"
-        }
-
 class MasterSynthesizer:
     @staticmethod
-    def build_post(title, source_name, meta, dossier, used_quotes_set, counter_seed):
-        primary_url = dossier.get("primary_verified_link", "")
-        if not primary_url or not primary_url.startswith("http"):
+    def build_verified_post(title, source_urls_list, used_quotes_set, use_ai=True):
+        meta = IntentAndMetaClassifierAgent.analyze(title)
+        data = DeepVerificationAndExtractionAgent.extract_and_verify(title, source_urls_list, meta)
+
+        # STRICT GATEKEEPER: Reject post if its Primary Intent link is missing or is a root domain!
+        if not DeepVerificationAndExtractionAgent.is_primary_intent_satisfied(meta, data):
+            print(f"   ⛔ [REJECTED - Missing Specific Intent Link] {title} ({meta['primary_intent']})")
             return None
 
-        intent_sig = f"{hashlib.md5(title.lower().encode('utf-8')).hexdigest()[:10]}__{meta['primary_intent']}"
-        job_id = hashlib.md5(intent_sig.encode("utf-8")).hexdigest()[:12]
+        unique_quote = UniqueIntentQuoteAgent.generate_unique_quote(title, meta, used_quotes_set, use_ai=use_ai)
+        mentor_html = OptionB_GeminiMentorAgent.generate_mentor_and_90day_strategy(title, meta, use_ai=use_ai)
+        full_html = OptionA_RichDossierBuilder.build_html(title, meta, data, unique_quote, mentor_html)
+
+        primary_source_url = source_urls_list[0][1] if source_urls_list else data["official_web"]
+        primary_source_name = " + ".join(sorted(set(data["combined_sources"]))) if data["combined_sources"] else "Official Board"
+
+        job_id = hashlib.md5(f"{CrossSiteCombinerAgent.normalize_exam_signature(title)}".encode("utf-8")).hexdigest()[:12]
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        real_display_date = data["dates"]["notification_date"]
+        if real_display_date == "To be notified in Official PDF" and data["dates"]["last_date"] != "To be notified in Official PDF":
+            real_display_date = f"Last Date: {data['dates']['last_date']}"
 
-        real_date_str = dossier["dates"].get("real_post_date_str") or dossier["dates"].get("notification_date")
-        if not real_date_str or real_date_str == "See Official Notice":
-            real_date_str = datetime.now().strftime("%d %b %Y")
-
-        quote = generate_unique_intent_quote(title, meta["primary_intent"], used_quotes_set, counter_seed)
-        strategy = build_90_day_strategy(title, meta)
-
-        links = dossier["links"]
-        apply_link = links["apply_link"] or primary_url
-        notif_pdf = links["notif_pdf"] or primary_url
-        admit_card_link = links["admit_card_link"] or primary_url
-        answer_key_link = links["answer_key_link"] or primary_url
-        result_link = links["result_link"] or primary_url
-        syllabus_link = links["syllabus_link"] or notif_pdf
-        official_site = links["official_site"] or primary_url
-
-        # Intent-specific Primary Action Button label & URL
-        intent_action_map = {
-            "INTENT_APPLY": ("🚀 Direct Official Registration / Apply Online Link", apply_link),
-            "INTENT_NOTIFICATION": ("📄 Download Official Notification PDF", notif_pdf),
-            "INTENT_ADMIT_CARD": ("🎫 Download Official Admit Card / Hall Ticket", admit_card_link),
-            "INTENT_ANSWER_KEY": ("🔑 Download Official Answer Key / Response Sheet", answer_key_link),
-            "INTENT_RESULT": ("🏆 Check Official Result / Merit List PDF", result_link),
-            "INTENT_SYLLABUS": ("📘 Download Official Syllabus & Exam Pattern PDF", syllabus_link)
-        }
-        primary_btn_label, primary_btn_url = intent_action_map.get(meta["primary_intent"], ("🔗 Open Official Portal Link", primary_url))
-
-        # Format Fees, Age, Selection, Pattern & Vacancy Tables
-        fee_html = "".join(f"<li>{f}</li>" for f in dossier["fees"]) or "<li>As per official notification norms (Check category-wise fee relaxation in official PDF).</li>"
-        age_html = "".join(f"<li>{a}</li>" for a in dossier["age_criteria"]) or "<li>Age Limit & Upper Age Relaxation (SC/ST/OBC/PwBD/Ex-SM) as per official recruitment rules.</li>"
-        sel_html = "".join(f"<li>{s}</li>" for s in dossier["selection_process"]) or "<li>Written Examination (CBT / Mains) ➔ Skill / Physical Test (if applicable) ➔ Document Verification & Medical.</li>"
-        pat_html = "".join(f"<li>{p}</li>" for p in dossier["exam_pattern"]) or "<li>Objective / Descriptive Examination as prescribed in the official notification brochure.</li>"
-
-        vac_table_rows = ""
-        if dossier["vacancy_rows"]:
-            for r in dossier["vacancy_rows"][:8]:
-                vac_table_rows += "<tr>" + "".join(f"<td style='border:1px solid #cbd5e1; padding:6px 10px;'>{c}</td>" for c in r) + "</tr>"
-        else:
-            vac_table_rows = f"<tr><td style='border:1px solid #cbd5e1; padding:6px 10px;'>{title}</td><td style='border:1px solid #cbd5e1; padding:6px 10px;'>{dossier['total_vacancy']}</td><td style='border:1px solid #cbd5e1; padding:6px 10px;'>UR / OBC / EWS / SC / ST as per Official PDF</td></tr>"
-
-        short_view_html = f"""
-<div class="short-view-card" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:10px; padding:16px; margin-bottom:16px;">
-    <div style="background:#fef3c7; border-left:4px solid #d97706; padding:8px 12px; margin-bottom:10px; font-weight:700; color:#92400e; font-size:13.5px;">{quote}</div>
-    <h3 style="margin:0 0 8px; color:#0f172a;">📢 {title}</h3>
-    <p style="margin:4px 0; font-size:13px; color:#334155;">
-        <strong>Box/Category:</strong> {meta['admin_box']} | <strong>Intent:</strong> {meta['primary_intent']} | <strong>Type:</strong> {meta['job_type']} | <strong>State:</strong> {meta['state']}
-    </p>
-    <p style="margin:4px 0; font-size:13px; color:#334155;">
-        <strong>Release/Update Date:</strong> {real_date_str} | <strong>Last Date:</strong> {dossier['dates']['last_date']} | <strong>Total Vacancy:</strong> {dossier['total_vacancy']}
-    </p>
-    <div style="margin-top:10px;">
-        <a href="{primary_btn_url}" target="_blank" rel="noopener" style="display:inline-block; background:#1d4ed8; color:#ffffff; padding:8px 14px; border-radius:6px; font-weight:700; text-decoration:none; font-size:13px;">{primary_btn_label}</a>
-        <a href="{notif_pdf}" target="_blank" rel="noopener" style="display:inline-block; background:#0f766e; color:#ffffff; padding:8px 14px; border-radius:6px; font-weight:700; text-decoration:none; font-size:13px; margin-left:8px;">📄 Official Notification PDF</a>
-    </div>
-</div>
-"""
-
-        full_details_html = f"""
-{short_view_html}
-<div class="full-dossier-view" style="background:#f8fafc; border:1px solid #94a3b8; border-radius:10px; padding:18px; margin-bottom:24px;">
-    <h4 style="margin:0 0 12px; color:#1e3a8a; border-bottom:2px solid #1e3a8a; padding-bottom:6px;">📋 OPTION A: COMPLETE OFFICIAL RECRUITMENT DOSSIER & VERIFIED TABLES</h4>
-
-    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; margin-bottom:16px;">
-        <div style="background:#ffffff; border:1px solid #cbd5e1; padding:12px; border-radius:8px;">
-            <h5 style="margin:0 0 8px; color:#b91c1c;">📅 Important Dates (Official Schedule)</h5>
-            <ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.6;">
-                <li><strong>Notification Release Date:</strong> {dossier['dates']['notification_date']}</li>
-                <li><strong>Apply Online Start Date:</strong> {dossier['dates']['apply_start_date']}</li>
-                <li><strong>Last Date to Apply:</strong> {dossier['dates']['last_date']}</li>
-                <li><strong>Extended Last Date:</strong> {dossier['dates']['extended_date']}</li>
-                <li><strong>Exam Date:</strong> {dossier['dates']['exam_date']}</li>
-                <li><strong>Admit Card Date:</strong> {dossier['dates']['admit_card_date']}</li>
-                <li><strong>Answer Key Date:</strong> {dossier['dates']['answer_key_date']}</li>
-                <li><strong>Result Date:</strong> {dossier['dates']['result_date']}</li>
-            </ul>
-        </div>
-        <div style="background:#ffffff; border:1px solid #cbd5e1; padding:12px; border-radius:8px;">
-            <h5 style="margin:0 0 8px; color:#047857;">💳 Application Fee & Age Criteria</h5>
-            <p style="margin:0 0 4px; font-weight:700; font-size:12.5px;">Application Fee:</p>
-            <ul style="margin:0 0 8px; padding-left:18px; font-size:13px;">{fee_html}</ul>
-            <p style="margin:0 0 4px; font-weight:700; font-size:12.5px;">Age Limit & Relaxation:</p>
-            <ul style="margin:0; padding-left:18px; font-size:13px;">{age_html}</ul>
-        </div>
-    </div>
-
-    <div style="background:#ffffff; border:1px solid #cbd5e1; padding:12px; border-radius:8px; margin-bottom:16px; overflow-x:auto;">
-        <h5 style="margin:0 0 8px; color:#1e40af;">📊 Category-Wise Vacancy Distribution & Eligibility Details (Total: {dossier['total_vacancy']})</h5>
-        <table style="width:100%; border-collapse:collapse; font-size:13px;">
-            <tbody>{vac_table_rows}</tbody>
-        </table>
-    </div>
-
-    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; margin-bottom:16px;">
-        <div style="background:#ffffff; border:1px solid #cbd5e1; padding:12px; border-radius:8px;">
-            <h5 style="margin:0 0 8px; color:#6d28d9;">⚙️ Selection Process</h5>
-            <ul style="margin:0; padding-left:18px; font-size:13px;">{sel_html}</ul>
-        </div>
-        <div style="background:#ffffff; border:1px solid #cbd5e1; padding:12px; border-radius:8px;">
-            <h5 style="margin:0 0 8px; color:#0f766e;">📝 Exam Pattern & Syllabus Highlights</h5>
-            <ul style="margin:0; padding-left:18px; font-size:13px;">{pat_html}</ul>
-        </div>
-    </div>
-
-    <div style="background:#eef2ff; border-left:4px solid #4f46e5; padding:14px; border-radius:8px; margin-bottom:16px;">
-        <h4 style="margin:0 0 8px; color:#312e81;">🎯 OPTION B: LAST 3-MONTH (90-DAY) AGENTIC AI EXAM STRATEGY</h4>
-        <ul style="margin:0; padding-left:18px; font-size:13.5px; color:#1e293b; line-height:1.6;">
-            <li><strong>Month 1 (Days 1–30 | Foundation & Core Syllabus):</strong> {strategy['month_1']}</li>
-            <li><strong>Month 2 (Days 31–60 | Speed, PYQs & Sectional Mastery):</strong> {strategy['month_2']}</li>
-            <li><strong>Month 3 (Days 61–90 | Full-Length Mocks & High-Yield Revision):</strong> {strategy['month_3']}</li>
-        </ul>
-    </div>
-
-    <div style="background:#ffffff; border:2px solid #2563eb; padding:12px; border-radius:8px;">
-        <h5 style="margin:0 0 8px; color:#1d4ed8;">🔗 Intent-Verified Official Direct Links & PDF Attachments</h5>
-        <table style="width:100%; border-collapse:collapse; font-size:13.5px;">
-            <tr><td style="padding:6px; border-bottom:1px solid #e2e8f0; font-weight:700;">{primary_btn_label}</td><td style="padding:6px; border-bottom:1px solid #e2e8f0;"><a href="{primary_btn_url}" target="_blank" style="color:#1d4ed8; font-weight:700;">Click Here to Open Exact Link</a></td></tr>
-            <tr><td style="padding:6px; border-bottom:1px solid #e2e8f0; font-weight:700;">Specific Registration / Apply Online Link</td><td style="padding:6px; border-bottom:1px solid #e2e8f0;"><a href="{apply_link}" target="_blank" style="color:#1d4ed8; font-weight:700;">Apply Online / Candidate Login</a></td></tr>
-            <tr><td style="padding:6px; border-bottom:1px solid #e2e8f0; font-weight:700;">Official Notification / Brochure PDF</td><td style="padding:6px; border-bottom:1px solid #e2e8f0;"><a href="{notif_pdf}" target="_blank" style="color:#0f766e; font-weight:700;">Download Official PDF</a></td></tr>
-            <tr><td style="padding:6px; font-weight:700;">Official Recruitment Board Portal</td><td style="padding:6px;"><a href="{official_site}" target="_blank" style="color:#334155; font-weight:700;">Visit Official Website</a></td></tr>
-        </table>
-    </div>
-</div>
-"""
+        print(f"   ✅ [VERIFIED {meta['primary_intent']}] {title[:42]} | Quote Ready | State: {meta['state']}")
 
         return {
             "id": job_id,
-            "intent_signature": intent_sig,
             "title": title,
             "category": meta["category"],
-            "admin_box": meta["admin_box"],
-            "is_new_admin_box": meta["is_new_admin_box"],
             "primary_intent": meta["primary_intent"],
             "job_type": meta["job_type"],
             "state": meta["state"],
-            "unique_quote": quote,
-            "source": source_name,
-            "link": primary_btn_url,
-            "url": primary_btn_url,
-            "apply_link": apply_link,
-            "notif_url": notif_pdf,
-            "download_pdf": notif_pdf,
-            "admit_card_link": admit_card_link,
-            "answer_key_link": answer_key_link,
-            "result_link": result_link,
-            "syllabus_link": syllabus_link,
-            "official_website": official_site,
-            "date": real_date_str,
-            "post_date": real_date_str,
-            "important_dates": dossier["dates"],
-            "total_vacancy": dossier["total_vacancy"],
-            "application_fee": dossier["fees"],
-            "age_criteria": dossier["age_criteria"],
-            "selection_process": dossier["selection_process"],
-            "exam_pattern": dossier["exam_pattern"],
-            "exam_strategy_90_days": strategy,
+            "unique_quote": unique_quote,
+            "source": primary_source_name,
+            "link": primary_source_url,
+            "url": primary_source_url,
+            "apply_link": data["apply_link"],
+            "applyUrl": data["apply_link"],
+            "notif_url": data["notif_url"],
+            "notifUrl": data["notif_url"],
+            "download_pdf": data["download_pdf"],
+            "result_url": data["result_url"],
+            "resultUrl": data["result_url"],
+            "answer_key_url": data["answer_key_url"],
+            "answerKeyUrl": data["answer_key_url"],
+            "admit_card_url": data["admit_card_url"],
+            "admitCardUrl": data["admit_card_url"],
+            "syllabus_url": data["syllabus_url"],
+            "official_web": data["official_web"],
+            "webUrl": data["official_web"],
+            "important_dates": data["dates"],
+            "dynamic_admin_review_boxes": data["dynamic_admin_review_boxes"],
+            "date": real_display_date,
+            "post_date": real_display_date,
             "updated_at": now_str,
-            "summary": f"[{meta['primary_intent']}] {title} | Total: {dossier['total_vacancy']} | Last Date: {dossier['dates']['last_date']}",
-            "short_view": short_view_html,
-            "description": full_details_html,
-            "content": full_details_html,
+            "summary": f"{title} ({meta['job_type']} | {meta['state']}) - {unique_quote}",
+            "description": full_html,
+            "content": full_html,
+            "accuracy_score": data["accuracy_score"],
+            "engine": "8-Layer Agentic Combination & Strict Intent Verifier",
             "status": "pending_review"
         }
 
-# ==============================================================================
-# LAYER 8: PARALLEL NON-BLOCKING PIPELINE EXECUTOR
-# ==============================================================================
-def detect_box_heading_for_anchor(a_tag):
-    """Finds the section/box heading above an anchor tag to detect dynamic/new categories."""
-    parent = a_tag.find_parent(["div", "td", "table", "section", "ul"])
-    for _ in range(4):
-        if not parent:
-            break
-        heading = parent.find(["h1", "h2", "h3", "h4", "th", "caption"])
-        if heading:
-            htxt = re.sub(r'\s+', ' ', heading.get_text(" ", strip=True)).strip()
-            if 3 <= len(htxt) <= 45:
-                return htxt
-        parent = parent.parent
-    return ""
+def collect_candidates_from_all_sources():
+    grouped_candidates = {}
 
-async def process_single_candidate(text, href, src_name, box_heading, used_quotes_set, counter_seed, loop, semaphore):
-    try:
-        meta = IntentAndMetaClassifierAgent.analyze(text, box_heading)
-        article_html = await safe_fetch_non_blocking(href, loop, semaphore, timeout=22.0)
-        if not article_html:
-            return None
-
-        dossier = deep_parse_article_dossier(article_html, href, text, meta["primary_intent"])
-        dossier = await verify_and_enrich_from_official_hub(text, meta["primary_intent"], dossier, loop, semaphore)
-
-        if not passes_one_month_freshness_gate(dossier, text):
-            return None
-
-        # Ensure serializable dates dict (remove datetime object before JSON dump)
-        dossier["dates"].pop("real_post_date_obj", None)
-        return MasterSynthesizer.build_post(text, src_name, meta, dossier, used_quotes_set, counter_seed)
-    except Exception:
-        return None
-
-async def process_aggregator(src, seen_titles, used_quotes_set, discovered_boxes, loop, semaphore):
-    posts = []
-    html = await safe_fetch_non_blocking(src["url"], loop, semaphore, timeout=22.0)
-    if not html:
-        return posts
-
-    soup = BeautifulSoup(html, "html.parser")
-    candidates = []
-
-    for a in soup.find_all("a", href=True):
-        text = re.sub(r'\s+', ' ', a.get_text(" ", strip=True)).strip()
-        href = urljoin(src["url"], a["href"].strip())
-        t_low = text.lower()
-
-        if len(text) < 14 or len(text) > 140:
+    for src in SOURCES:
+        print(f"📡 Scanning Aggregator Signal: {src['name']}...")
+        html = resilient_stealth_fetch(src["url"])
+        if not html:
             continue
-        if any(j in t_low for j in JUNK_TITLES):
-            continue
-        if not href.startswith("http") or any(b in href.lower() for b in BLOCK_DOMAINS):
-            continue
+        soup = BeautifulSoup(html, "html.parser")
+        for a in soup.find_all("a", href=True):
+            text = re.sub(r'\s+', ' ', a.get_text(" ", strip=True)).strip()
+            href = urljoin(src["url"], a["href"].strip())
+            t_low = text.lower()
 
-        norm = re.sub(r'[^a-z0-9]+', ' ', t_low).strip()
-        if norm in seen_titles:
-            continue
+            if len(text) < 16 or len(text) > 140:
+                continue
+            if any(j in t_low for j in JUNK_TITLES):
+                continue
+            if any(b in href.lower() for b in BLOCK_DOMAINS):
+                continue
 
-        if any(kw in t_low for kw in [
-            "recruitment", "online form", "result", "admit card", "answer key",
-            "vacancy", "bharti", "2026", "notification", "syllabus", "merit list",
-            "cutoff", "hall ticket", "apprentice", "officer", "clerk", "constable", "engineer"
-        ]):
-            seen_titles.add(norm)
-            box_heading = detect_box_heading_for_anchor(a)
-            if box_heading:
-                discovered_boxes.add(box_heading)
-            candidates.append((text, href, src["name"], box_heading))
+            if any(kw in t_low for kw in [
+                "online form", "recruitment", "vacancy", "bharti", "result",
+                "admit card", "answer key", "syllabus", "notification", "apprentice", "2026"
+            ]):
+                sig = CrossSiteCombinerAgent.normalize_exam_signature(text)
+                if not sig:
+                    continue
+                if sig not in grouped_candidates:
+                    grouped_candidates[sig] = {"title": text, "sources": []}
+                if (src["name"], href) not in grouped_candidates[sig]["sources"]:
+                    grouped_candidates[sig]["sources"].append((src["name"], href))
 
-    # Process candidates concurrently with 40s per-post timeout protection
-    tasks = [
-        asyncio.wait_for(
-            process_single_candidate(text, href, s_name, box_h, used_quotes_set, idx, loop, semaphore),
-            timeout=40.0
-        )
-        for idx, (text, href, s_name, box_h) in enumerate(candidates[:45])
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in results:
-        if isinstance(r, dict) and r:
-            posts.append(r)
+    return grouped_candidates
 
-    print(f"   ✅ {src['name']}: Verified {len(posts)} active posts (with real dates & intent links)")
-    return posts
-
-async def process_master_directory_entry(idx, title, hub_key, kws, posts_by_signature, used_quotes_set, loop, semaphore):
-    """
-    Crawls the official portal notice board for each Master Directory post to check for active
-    notifications, apply links, admit cards, answer keys, or results.
-    """
-    try:
-        hub = OFFICIAL_HUBS.get(hub_key)
-        if not hub:
-            return None
-
-        meta = IntentAndMetaClassifierAgent.analyze(title, "Master Directory")
-        intent_sig = f"{hashlib.md5(title.lower().encode('utf-8')).hexdigest()[:10]}__{meta['primary_intent']}"
-        if intent_sig in posts_by_signature:
-            return None
-
-        notice_html = await safe_fetch_non_blocking(hub["notices"], loop, semaphore, timeout=18.0)
-        dossier = deep_parse_article_dossier(notice_html, hub["notices"], title, meta["primary_intent"])
-        dossier = await verify_and_enrich_from_official_hub(title, meta["primary_intent"], dossier, loop, semaphore)
-        dossier["dates"].pop("real_post_date_obj", None)
-
-        return MasterSynthesizer.build_post(title, f"Official Portal ({hub['name']})", meta, dossier, used_quotes_set, 1000 + idx)
-    except Exception:
-        return None
-
-async def main_async():
-    print("🚀 Starting 8-Layer Agentic AI Deep Recruitment Scraper Engine...")
+def main():
+    print("🚀 Starting 8-Layer Agentic Combination, Strict Intent & Unique Quote Engine...")
     existing = []
     if os.path.exists(DATABASE_FILE):
         try:
@@ -1046,88 +1020,61 @@ async def main_async():
         except Exception:
             existing = []
 
-    posts_by_signature = {}
+    # Clean out old posts with root domains & load existing quotes into used_quotes_set
+    cleaned_existing = []
     used_quotes_set = set()
-    seen_titles = set()
-    discovered_boxes = set(STANDARD_BOXES)
 
-    # Clean existing DB: purge any broken '#' or 'google.com/search' records so they get freshly re-scraped with real links
     for j in existing:
         if not isinstance(j, dict):
             continue
-        ap_link = j.get("apply_link", "")
-        if not ap_link or ap_link == "#" or "google.com/search" in ap_link:
+        meta_check = IntentAndMetaClassifierAgent.analyze(j.get("title", ""))
+        check_data = {
+            "apply_link": j.get("apply_link", "#"),
+            "notif_url": j.get("notif_url", "#"),
+            "result_url": j.get("result_url", "#"),
+            "admit_card_url": j.get("admit_card_url", "#"),
+            "answer_key_url": j.get("answer_key_url", "#"),
+            "syllabus_url": j.get("syllabus_url", "#")
+        }
+        if DeepVerificationAndExtractionAgent.is_primary_intent_satisfied(meta_check, check_data):
+            # Ensure existing posts also have a unique non-repeating quote
+            q = j.get("unique_quote", "").strip()
+            if not q or q.lower() in used_quotes_set:
+                q = UniqueIntentQuoteAgent.generate_unique_quote(j.get("title", "Exam Post"), meta_check, used_quotes_set, use_ai=False)
+                j["unique_quote"] = q
+            else:
+                used_quotes_set.add(q.lower())
+            cleaned_existing.append(j)
+
+    seen_sigs = {CrossSiteCombinerAgent.normalize_exam_signature(j.get("title", "")) for j in cleaned_existing}
+    grouped_candidates = collect_candidates_from_all_sources()
+
+    new_posts = []
+    ai_used = 0
+
+    for sig, bundle in grouped_candidates.items():
+        if sig in seen_sigs:
             continue
-        sig = j.get("intent_signature") or j.get("id", "")
-        posts_by_signature[sig] = j
-        if q := j.get("unique_quote"):
-            used_quotes_set.add(q.lower())
-        if t := j.get("title"):
-            seen_titles.add(re.sub(r'[^a-z0-9]+', ' ', t.lower()).strip())
-        if bx := j.get("admin_box"):
-            discovered_boxes.add(bx)
-
-    loop = asyncio.get_running_loop()
-    semaphore = asyncio.Semaphore(25)
-
-    # 1. Sweep all 8 Aggregators & Mirrors Concurrently
-    agg_tasks = [process_aggregator(src, seen_titles, used_quotes_set, discovered_boxes, loop, semaphore) for src in SOURCES]
-    agg_results = await asyncio.gather(*agg_tasks, return_exceptions=True)
-
-    new_added = 0
-    delta_updated = 0
-
-    for res in agg_results:
-        if isinstance(res, list):
-            for post in res:
-                sig = post["intent_signature"]
-                if sig not in posts_by_signature:
-                    posts_by_signature[sig] = post
-                    new_added += 1
-                else:
-                    old_p = posts_by_signature[sig]
-                    if old_p.get("apply_link") != post.get("apply_link") or old_p.get("download_pdf") != post.get("download_pdf"):
-                        posts_by_signature[sig] = post
-                        delta_updated += 1
-
-    # 2. Sweep Master Directory Catalog Concurrently (Official Portals for Govt & Semi-Govt/Local Posts)
-    md_tasks = [
-        asyncio.wait_for(
-            process_master_directory_entry(idx, title, hub_key, kws, posts_by_signature, used_quotes_set, loop, semaphore),
-            timeout=35.0
+        use_ai = (ai_used < 15)
+        post = MasterSynthesizer.build_verified_post(
+            bundle["title"], bundle["sources"], used_quotes_set, use_ai=use_ai
         )
-        for idx, (title, hub_key, kws) in enumerate(MASTER_DIRECTORY_CATALOG)
-    ]
-    md_results = await asyncio.gather(*md_tasks, return_exceptions=True)
-    for post in md_results:
-        if isinstance(post, dict) and post:
-            sig = post["intent_signature"]
-            if sig not in posts_by_signature:
-                posts_by_signature[sig] = post
-                new_added += 1
+        if post:
+            if use_ai and GEMINI_API_KEY:
+                ai_used += 1
+                time.sleep(0.8)
+            new_posts.append(post)
+            seen_sigs.add(sig)
+            if len(new_posts) >= 25:
+                break
 
-    final_db = list(posts_by_signature.values())
+    final_db = new_posts + cleaned_existing
+    final_db = final_db[:500]
+
     with open(DATABASE_FILE, "w", encoding="utf-8") as f:
         json.dump(final_db, f, ensure_ascii=False, indent=2)
 
-    # Save discovered Admin Panel Boxes (Standard + Newly Discovered Boxes)
-    boxes_payload = {
-        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "standard_boxes": sorted(list(STANDARD_BOXES)),
-        "all_discovered_boxes": sorted(list(discovered_boxes)),
-        "new_custom_boxes": sorted(list(discovered_boxes - STANDARD_BOXES))
-    }
-    with open(ADMIN_BOXES_FILE, "w", encoding="utf-8") as bf:
-        json.dump(boxes_payload, bf, ensure_ascii=False, indent=2)
-
-    print(f"\n🎉 8-Layer Sync Complete! New Added: {new_added} | Delta Updated: {delta_updated} | Total Verified Records: {len(final_db)} | Admin Boxes: {len(discovered_boxes)}")
-
-def main():
-    try:
-        # Strict 330s (5.5 minutes) hard limit to ensure GitHub Action always finishes under 6 minutes
-        asyncio.run(asyncio.wait_for(main_async(), timeout=330.0))
-    except asyncio.TimeoutError:
-        print("⚠️ Reached 5.5-minute safety checkpoint. All verified posts saved cleanly.")
+    print(f"\n🎉 Master Sync Complete! New Verified Posts: {len(new_posts)} | Total Clean Posts with Unique Quotes in {DATABASE_FILE}: {len(final_db)}")
 
 if __name__ == "__main__":
     main()
