@@ -1,9 +1,27 @@
 {
-  "updatedAt": "06 Nov 2026, 02:08 AM IST",
+  "updatedAt": "06 Nov 2026, 03:03 AM IST",
   "hookLine1": "Aaj ki Top 5 Khabrein jo aapke Exam ko Crack karengi - Sirf 3 minute mein!",
   "hookLine2": "Utho! Aaj ke is dynamic analysis mein RBI ka naya update aur Supreme Court ka landmark faisla shamil hai.",
   "totalArticles": 30,
   "articles": [
+    {
+      "category": "national",
+      "categoryLabel": "🏛️ National & Polity",
+      "title": "Maharashtra FDA seizes drugs, cosmetics worth ₹34.51 lakh, cancels 122 licences",
+      "link": "https://www.thehindu.com/news/national/maharashtra/maharashtra-fda-seizes-drugs-cosmetics-worth-3451-lakh-cancels-122-licences/article71671236.ece",
+      "pubDate": "Fri, 06 Nov 2026 02:08:49 +0530",
+      "examRelevance": "GS Paper-II: Polity, Governance, Supreme Court Judgements, Bills & Govt Schemes",
+      "keyPoints": "• The FDA urged citizens to report instances of illegal drug manufacturing or sales, as well as suspected substandard drugs, medical devices and cosmetics, to its commissioner’s office or the nearest district office"
+    },
+    {
+      "category": "national",
+      "categoryLabel": "🏛️ National & Polity",
+      "title": "Foreign Secretary Misri sets stage for Nepal PM’s upcoming India visit",
+      "link": "https://www.thehindu.com/news/national/foreign-secretary-misri-sets-stage-for-nepal-pms-upcoming-india-visit/article71671036.ece",
+      "pubDate": "Fri, 06 Nov 2026 02:04:58 +0530",
+      "examRelevance": "GS Paper-II: Polity, Governance, Supreme Court Judgements, Bills & Govt Schemes",
+      "keyPoints": "• The Nepali leaders expressed “gratitude for India’s swift and substantial humanitarian and technical assistance in the aftermath of the Bhotekoshi floods”, a joint press release stated"
+    },
     {
       "category": "national",
       "categoryLabel": "🏛️ National & Polity",
@@ -39,24 +57,6 @@
       "pubDate": "Fri, 06 Nov 2026 01:24:48 +0530",
       "examRelevance": "GS Paper-II: Polity, Governance, Supreme Court Judgements, Bills & Govt Schemes",
       "keyPoints": "• Odisha political parties accuse A.P.<br>• of bribing people to secure their votes in MPTC and ZPTC elections"
-    },
-    {
-      "category": "national",
-      "categoryLabel": "🏛️ National & Polity",
-      "title": "Kochi police yet to complete verification of private bus employees",
-      "link": "https://www.thehindu.com/news/national/kerala/kochi-police-yet-to-complete-verification-of-private-bus-employees/article71666851.ece",
-      "pubDate": "Fri, 06 Nov 2026 01:22:39 +0530",
-      "examRelevance": "GS Paper-II: Polity, Governance, Supreme Court Judgements, Bills & Govt Schemes",
-      "keyPoints": "• The police launched the background verification drive following a series of incidents of criminal behaviour involving private bus crew"
-    },
-    {
-      "category": "national",
-      "categoryLabel": "🏛️ National & Polity",
-      "title": "Opposition trying to destabilise TVK-led government, says Manickam Tagore",
-      "link": "https://www.thehindu.com/news/national/tamil-nadu/opposition-trying-to-destabilise-tvk-led-government-says-manickam-tagore/article71670045.ece",
-      "pubDate": "Fri, 06 Nov 2026 00:47:12 +0530",
-      "examRelevance": "GS Paper-II: Polity, Governance, Supreme Court Judgements, Bills & Govt Schemes",
-      "keyPoints": "• He accuses the Opposition of attempting to create uncertainty and undermining the State’s development"
     },
     {
       "category": "economy",
@@ -115,6 +115,42 @@
     {
       "category": "ir",
       "categoryLabel": "🌐 International Relations",
+      "title": "India-born Nithya Raman beats Democratic incumbent to become LA mayor",
+      "link": "https://www.thehindu.com/news/international/india-born-nithya-raman-beats-democratic-incumbent-to-become-la-mayor/article71671618.ece",
+      "pubDate": "Fri, 06 Nov 2026 03:01:01 +0530",
+      "examRelevance": "GS Paper-II & Current Affairs: Bilateral Agreements, Foreign Visits & UN/G20/BRICS",
+      "keyPoints": "• Leftist Nithya Raman, who was the first DSA-affiliated Los Angeles City Council member, will now helm the entertainment capital as it prepares to host the 2028 Olympics"
+    },
+    {
+      "category": "ir",
+      "categoryLabel": "🌐 International Relations",
+      "title": "Foreign Secretary Misri sets stage for Nepal PM’s upcoming India visit",
+      "link": "https://www.thehindu.com/news/national/foreign-secretary-misri-sets-stage-for-nepal-pms-upcoming-india-visit/article71671036.ece",
+      "pubDate": "Fri, 06 Nov 2026 02:04:58 +0530",
+      "examRelevance": "GS Paper-II & Current Affairs: Bilateral Agreements, Foreign Visits & UN/G20/BRICS",
+      "keyPoints": "• The Nepali leaders expressed “gratitude for India’s swift and substantial humanitarian and technical assistance in the aftermath of the Bhotekoshi floods”, a joint press release stated"
+    },
+    {
+      "category": "ir",
+      "categoryLabel": "🌐 International Relations",
+      "title": "The ecological fallout of Israel’s war in Gaza",
+      "link": "https://www.thehindu.com/opinion/op-ed/the-ecological-fallout-of-israels-war-in-gaza/article71670933.ece",
+      "pubDate": "Fri, 06 Nov 2026 01:56:44 +0530",
+      "examRelevance": "GS Paper-II & Current Affairs: Bilateral Agreements, Foreign Visits & UN/G20/BRICS",
+      "keyPoints": "• The destruction of Gaza’s ecosystems underscores the need for accountability under international law"
+    },
+    {
+      "category": "ir",
+      "categoryLabel": "🌐 International Relations",
+      "title": "Trump debacle: On the U.S. midterm election results",
+      "link": "https://www.thehindu.com/opinion/editorial/trump-debacle-on-the-us-midterm-election-results/article71670096.ece",
+      "pubDate": "Fri, 06 Nov 2026 01:45:12 +0530",
+      "examRelevance": "GS Paper-II & Current Affairs: Bilateral Agreements, Foreign Visits & UN/G20/BRICS",
+      "keyPoints": "• Democrats must use their win to influence policy and improve lives"
+    },
+    {
+      "category": "ir",
+      "categoryLabel": "🌐 International Relations",
       "title": "Melania Trump calls for ‘enduring’ Ukraine truce as rivals meet at White House",
       "link": "https://www.thehindu.com/news/international/melania-trump-calls-for-enduring-ukraine-truce-as-rivals-meet-at-white-house/article71671601.ece",
       "pubDate": "Fri, 06 Nov 2026 01:21:25 +0530",
@@ -129,42 +165,6 @@
       "pubDate": "Fri, 06 Nov 2026 00:50:42 +0530",
       "examRelevance": "GS Paper-II & Current Affairs: Bilateral Agreements, Foreign Visits & UN/G20/BRICS",
       "keyPoints": "• The ADC, one of the main opposition parties trying to oust President Bola Tinubu, has been mired in lawsuits around its leadership, which have now ensnared its 2027 nominee"
-    },
-    {
-      "category": "ir",
-      "categoryLabel": "🌐 International Relations",
-      "title": "Eight dead in mass shooting in rural west Turkiye: officials",
-      "link": "https://www.thehindu.com/news/international/people-dead-in-mass-shooting-in-rural-west-turkiye-officials/article71671567.ece",
-      "pubDate": "Fri, 06 Nov 2026 00:30:38 +0530",
-      "examRelevance": "GS Paper-II & Current Affairs: Bilateral Agreements, Foreign Visits & UN/G20/BRICS",
-      "keyPoints": "• The shooting struck in a rural area near Afyonkarahisar, a town halfway between the capital Ankara and the coastal city of Izmir"
-    },
-    {
-      "category": "ir",
-      "categoryLabel": "🌐 International Relations",
-      "title": "Hasina says she will return from exile in December ‘at any cost’",
-      "link": "https://www.thehindu.com/news/international/hasina-says-she-will-return-from-exile-in-december-at-any-cost/article71671189.ece",
-      "pubDate": "Thu, 05 Nov 2026 23:55:50 +0530",
-      "examRelevance": "GS Paper-II & Current Affairs: Bilateral Agreements, Foreign Visits & UN/G20/BRICS",
-      "keyPoints": "• Hasina's planned return comes as her party faces an uncertain future amid a sweeping crackdown.<br>• The party remains banned, with senior leaders arrested or driven into exile."
-    },
-    {
-      "category": "ir",
-      "categoryLabel": "🌐 International Relations",
-      "title": "Foreign Secretary Misri sets stage for Nepal PM’s upcoming India visit",
-      "link": "https://www.thehindu.com/news/national/foreign-secretary-misri-sets-stage-for-nepal-pms-upcoming-india-visit/article71671036.ece",
-      "pubDate": "Thu, 05 Nov 2026 23:50:21 +0530",
-      "examRelevance": "GS Paper-II & Current Affairs: Bilateral Agreements, Foreign Visits & UN/G20/BRICS",
-      "keyPoints": "• The Nepali leaders expressed “gratitude for India’s swift and substantial humanitarian and technical assistance in the aftermath of the Bhotekoshi floods”, a joint press release stated"
-    },
-    {
-      "category": "ir",
-      "categoryLabel": "🌐 International Relations",
-      "title": "U.S. midterm elections 2026 updates: Democrats vow to rein in Trump as he shows off White House ballroom",
-      "link": "https://www.thehindu.com/news/international/us-midterm-elections-2026-results-trump-senate-congress-races-winners-losers-live-updates-republicans-democrats/article71668404.ece",
-      "pubDate": "Thu, 05 Nov 2026 23:20:46 +0530",
-      "examRelevance": "GS Paper-II & Current Affairs: Bilateral Agreements, Foreign Visits & UN/G20/BRICS",
-      "keyPoints": "• Indian-American physician Amish Shah has made history after becoming the first from the community to represent Arizona in Congress"
     },
     {
       "category": "scitech",
